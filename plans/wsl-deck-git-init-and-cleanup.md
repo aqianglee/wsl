@@ -122,3 +122,10 @@ __pycache__/
 - [x] 保留 `backups\ubuntu\ubuntu.vhdx`、`snapshots\_tools\`、`wsl-mysql\*.vhdx`
 - [x] 以 `aqianglee <695182311@qq.com>` 身份提交（單次 `-c`，不寫 git config）
 - [x] 首次提交訊息 `chore: 初始化本地倉庫（WSL Deck 原始碼與計畫文件）`
+
+## 7. 執行結果（2026-11-04）
+
+- 倉庫：`main` 分支，root commit `40335e7`，追蹤 79 個檔案（16,236 行）。
+- 已刪除 4 項程式碼快照：`_m5-snapshots\`、`_m6-snapshots\`、`wsl-deck\_m7-snapshots\`、`wsl-deck\config.json.pre-m5.bak`。
+- 執行個體備份與快照未變：`backups\` 3 個檔案 6,266 MB、`snapshots\` 42 個檔案 536 MB。
+- `git status` 僅剩根目錄 `%sn  ; done`（0 byte 非備份垃圾檔，未納入版控）。
