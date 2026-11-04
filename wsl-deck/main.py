@@ -22,6 +22,7 @@ def main() -> int:
     from app.config import Config, ConfigError
     from app.logbus import setup_logging
     from app.proxy import apply_runtime, parse_config
+    from app.single_instance import SingleInstance
     from app.ui.main_window import MainWindow
     from app.ui.theme import apply_theme
     from app.workspace import ensure_workspace
@@ -29,6 +30,12 @@ def main() -> int:
     app = QApplication([sys.argv[0], *argv])
     app.setApplicationName("WSL Deck")
     app.setOrganizationName("WSL Deck")
+
+    instance = SingleInstance("WSL Deck")
+    if not instance.acquire():
+        if not silent:
+            instance.activate_existing()
+        return 0
 
     try:
         config = Config(app_dir() / "config.json")
@@ -47,6 +54,7 @@ def main() -> int:
         logger.warning("建立工作目錄骨架失敗：%s", exc)
 
     window = MainWindow(config)
+    instance.activated.connect(window.show_window)
     if not (silent and window.tray_available):
         window.show()
     return app.exec()

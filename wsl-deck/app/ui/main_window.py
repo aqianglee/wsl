@@ -418,13 +418,13 @@ class MainWindow(QMainWindow):
         return self._tray.available
 
     def _connect_tray_signals(self) -> None:
-        self._tray.show_requested.connect(self._restore_window)
+        self._tray.show_requested.connect(self.show_window)
         self._tray.start_default_requested.connect(self._tray_start_default)
         self._tray.shutdown_all_requested.connect(self._tray_shutdown_all)
         self._tray.reapply_requested.connect(self._tray_reapply)
         self._tray.quit_requested.connect(self._quit_app)
 
-    def _restore_window(self) -> None:
+    def show_window(self) -> None:
         self.showNormal()
         self.activateWindow()
         self.raise_()
@@ -438,23 +438,23 @@ class MainWindow(QMainWindow):
             None,
         )
         if distro is None:
-            self._restore_window()
+            self.show_window()
             QMessageBox.information(
                 self, "啟動預設 instance", "找不到可啟動的預設 instance。"
             )
             return
         if distro.running:
-            self._restore_window()
+            self.show_window()
             self._show_detail(distro)
             return
         self._start(distro.name)
 
     def _tray_shutdown_all(self) -> None:
-        self._restore_window()
+        self.show_window()
         self._shutdown_all()
 
     def _tray_reapply(self) -> None:
-        self._restore_window()
+        self.show_window()
         if not self._auto_apply_all(silent_empty=True):
             self._tray.show_message(
                 "重新套用網路規則", "目前沒有需要重套的規則。"
