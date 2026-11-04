@@ -1,0 +1,28 @@
+# WSL 執行個體與虛擬磁碟（含整機備份）
+/instances/
+/backups/
+/snapshots/
+/ubuntu/
+/node22/
+/alms/
+/Ubuntu-26.04/
+/wsl-mysql/
+*.vhdx
+*.tar
+*.tar.gz
+
+# 動工前的程式快照（已清理，防止再被納入）
+/_m*-snapshots/
+/wsl-deck/_m*-snapshots/
+
+# 開發產物與本機狀態
+/wsl-deck/.venv/
+/wsl-deck/build/
+/wsl-deck/dist/
+/wsl-deck/logs/
+__pycache__/
+*.pyc
+/wsl-deck/config.json
+/wsl-deck/config.json.*.bak
+*.lnk
+/.screenshots/
