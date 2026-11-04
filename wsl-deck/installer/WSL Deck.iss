@@ -10,6 +10,7 @@ AppId={{4447AF87-5FA8-4D91-83FA-D49E33306590}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher=WSL Deck
+SetupIconFile=..\assets\wsl-deck-icon.ico
 DefaultDirName={localappdata}\Programs\WSL Deck
 DefaultGroupName=WSL Deck
 DisableProgramGroupPage=yes

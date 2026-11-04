@@ -3,18 +3,23 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $work = Join-Path $root "build"
 $dist = Join-Path $root "dist"
 $python = Join-Path $root ".venv\Scripts\python.exe"
+$log = Join-Path $work "pyinstaller.log"
 
-# 先由 app_icon.py 的同一份繪製邏輯生成 exe 圖標，確保與 App 內部圖標一致
-& $python (Join-Path $root "installer\make_app_icon.py")
-if ($LASTEXITCODE -ne 0) {
-    throw "建置失敗：生成圖標失敗"
-}
-
+# PowerShell 5.1 會把 PyInstaller 的 stderr 當成終止錯誤，改用 Continue + 日誌檔
+$previous = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & $python -m PyInstaller `
     --noconfirm --clean `
     --workpath $work `
     --distpath $dist `
-    "$root\WSL Deck.spec"
+    "$root\WSL Deck.spec" 2> $log
+
+$exitCode = $LASTEXITCODE
+$ErrorActionPreference = $previous
+if ($exitCode -ne 0) {
+    Get-Content $log -Tail 20
+    throw "建置失敗：PyInstaller 結束碼 $exitCode"
+}
 
 $exe = Join-Path $dist "WSL Deck\WSL Deck.exe"
 if (-not (Test-Path $exe)) {

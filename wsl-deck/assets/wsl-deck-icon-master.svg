@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"
+     viewBox="0 0 1024 1024" role="img"
+     aria-label="WSL Desk application icon: terminal prompt on layered instance cards">
+  <title>WSL Desk / WSL Instance Manager — icon master</title>
+  <defs>
+    <linearGradient id="plateGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B5CAD"/>
+      <stop offset="1" stop-color="#1E88E5"/>
+    </linearGradient>
+    <clipPath id="plateClip">
+      <rect x="24" y="24" width="976" height="976" rx="195" ry="195"/>
+    </clipPath>
+  </defs>
+
+  <!-- ===== base plate: Fluent blue, light gradient, 1px-equivalent light edge ===== -->
+  <g clip-path="url(#plateClip)">
+    <rect x="24" y="24" width="976" height="976" fill="url(#plateGradient)"/>
+  </g>
+  <rect x="24" y="24" width="976" height="976" rx="195" ry="195"
+        fill="none" stroke="#E5F3FF" stroke-opacity="0.28" stroke-width="6"/>
+
+  <!-- ===== two translucent instance cards behind the terminal ===== -->
+  <rect x="288" y="226" width="592" height="424" rx="80" ry="80"
+        fill="#E5F3FF" fill-opacity="0.13"
+        stroke="#E5F3FF" stroke-opacity="0.41" stroke-width="7"/>
+  <rect x="260" y="252" width="592" height="424" rx="80" ry="80"
+        fill="#E5F3FF" fill-opacity="0.23"
+        stroke="#E5F3FF" stroke-opacity="0.59" stroke-width="7"/>
+
+  <!-- ===== terminal window ===== -->
+  <rect x="216" y="288" width="592" height="424" rx="72" ry="72" fill="#111827"/>
+
+  <!-- title bar: three window dots + hairline separator -->
+  <g fill="#FFFFFF" fill-opacity="0.18">
+    <circle cx="274" cy="330" r="9"/>
+    <circle cx="316" cy="330" r="9"/>
+    <circle cx="358" cy="330" r="9"/>
+  </g>
+  <rect x="256" y="365" width="512" height="3" fill="#FFFFFF" fill-opacity="0.10"/>
+
+  <!-- ===== prompt glyph: >_ ===== -->
+  <polyline points="405,432 505,512 405,592" fill="none" stroke="#3DDC84"
+            stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="553" y="530" width="88" height="62" rx="10" ry="10" fill="#3DDC84"/>
+
+  <!-- ===== management gear badge, bottom-right ===== -->
+  <path fill="#E5F3FF" fill-rule="evenodd"
+        d="M 848.00,800.00 a 20,20 0 1,0 40,0 a 20,20 0 1,0 -40,0 Z
+           M 858.72,746.80 L 877.28,746.80 L 877.02,761.07 L 889.15,766.09 L 899.05,755.82
+           L 912.18,768.95 L 901.91,778.85 L 906.93,790.98 L 921.20,790.72 L 921.20,809.28
+           L 906.93,809.02 L 901.91,821.15 L 912.18,831.05 L 899.05,844.18 L 889.15,833.91
+           L 877.02,838.93 L 877.28,853.20 L 858.72,853.20 L 858.98,838.93 L 846.85,833.91
+           L 836.95,844.18 L 823.82,831.05 L 834.09,821.15 L 829.07,809.02 L 814.80,809.28
+           L 814.80,790.72 L 829.07,790.98 L 834.09,778.85 L 823.82,768.95 L 836.95,755.82
+           L 846.85,766.09 L 858.98,761.07 Z"/>
+</svg>

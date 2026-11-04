@@ -1,15 +1,27 @@
-"""以 QPainter 產生圖標，不依賴外部圖檔。"""
+"""App 圖標：優先載入 assets 內的 ICO，缺失時回退到內建繪製。"""
 
 from __future__ import annotations
+
+import sys
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 
+from app.paths import app_dir
+
 ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
+ASSET_NAME = "wsl-deck-icon.ico"
+
+
+def asset_path() -> Path:
+    """開發態在 app_dir()；凍結後 PyInstaller 把資源放在 _internal（sys._MEIPASS）。"""
+    base = Path(getattr(sys, "_MEIPASS", app_dir()))
+    return base / "assets" / ASSET_NAME
 
 
 def app_pixmap(size: int) -> QPixmap:
-    """繪製單一尺寸的 App 圖標，供視窗圖標與打包用 ICO 共用。"""
+    """繪製單一尺寸的 App 圖標，僅在資產缺失時作為回退。"""
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
@@ -30,6 +42,10 @@ def app_pixmap(size: int) -> QPixmap:
 
 
 def app_icon() -> QIcon:
+    """優先使用 assets 內的 ICO；缺失時回退到內建繪製。"""
+    path = asset_path()
+    if path.is_file():
+        return QIcon(str(path))
     icon = QIcon()
     for size in ICON_SIZES:
         icon.addPixmap(app_pixmap(size))
