@@ -38,9 +38,9 @@ SAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 class NewInstanceWizard(QWizard):
-    def __init__(self, distro_root: Path, existing_names: list[str], parent=None):
+    def __init__(self, instance_root: Path, existing_names: list[str], parent=None):
         super().__init__(parent)
-        self._distro_root = distro_root
+        self._instance_root = instance_root
         self._existing = existing_names
         self._workers: set[TaskWorker] = set()
         self._online_loaded = False
@@ -262,7 +262,7 @@ class NewInstanceWizard(QWizard):
         if self._dir_edited:
             return
         name = self._name_edit.text().strip()
-        self._dir_edit.setText(str(self._distro_root / name) if name else "")
+        self._dir_edit.setText(str(self._instance_root / name) if name else "")
 
     # ---------- 線上清單 ----------
 
@@ -319,7 +319,7 @@ class NewInstanceWizard(QWizard):
         else:
             file_filter = "VHDX (*.vhdx *.vhd);;所有檔案 (*)"
         path, _selected = QFileDialog.getOpenFileName(
-            self, "選擇來源檔案", str(self._distro_root), file_filter
+            self, "選擇來源檔案", str(self._instance_root), file_filter
         )
         if not path:
             return
@@ -342,7 +342,7 @@ class NewInstanceWizard(QWizard):
         self._dir_edited = True
 
     def _browse_dir(self) -> None:
-        start = self._dir_edit.text().strip() or str(self._distro_root)
+        start = self._dir_edit.text().strip() or str(self._instance_root)
         path = QFileDialog.getExistingDirectory(self, "選擇安裝目錄", start)
         if path:
             self._dir_edit.setText(path)

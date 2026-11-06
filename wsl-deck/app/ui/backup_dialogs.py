@@ -201,7 +201,7 @@ class CloneDialog(DialogBase):
         self.target_dir = ""
         self._existing = existing_names
         self._dir_edited = False
-        self._distro_root = config.resolve_path(config.get("distro_root", "."))
+        self._instance_root = config.instance_root()
 
         self._name_edit = QLineEdit(self)
         self._name_edit.setPlaceholderText(f"{distro.name}-copy")
@@ -223,13 +223,13 @@ class CloneDialog(DialogBase):
         self.show_error("")
         if not self._dir_edited:
             name = text.strip()
-            self._dir_edit.setText(str(self._distro_root / name) if name else "")
+            self._dir_edit.setText(str(self._instance_root / name) if name else "")
 
     def _on_dir_edited(self, _text: str) -> None:
         self._dir_edited = True
 
     def _browse_dir(self) -> None:
-        start = self._dir_edit.text().strip() or str(self._distro_root)
+        start = self._dir_edit.text().strip() or str(self._instance_root)
         path = QFileDialog.getExistingDirectory(self, "選擇目標目錄", start)
         if path:
             self._dir_edit.setText(path)

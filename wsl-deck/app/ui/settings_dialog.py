@@ -114,8 +114,9 @@ class SettingsDialog(DialogBase):
             Path(workspace) / SUBDIR_INSTANCES
         ):
             self.add_info(
-                "目前 instance 目錄尚未整理到 instances\\；"
-                "「套用工作目錄骨架」只影響之後新建的 instance。"
+                "目前 instance 目錄不在 instances\\ 下；若它等於工作目錄，"
+                "新增／複製會預設改用 instances\\，其餘自訂路徑則沿用。"
+                "既有 instance 不會被搬移。"
             )
 
         self._poll_spin = QSpinBox()

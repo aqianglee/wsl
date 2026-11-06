@@ -50,6 +50,24 @@ class ConfigTest(unittest.TestCase):
             migrated.data["snapshot_keep"],
             {"last": 10, "daily": 7, "weekly": 4, "monthly": 6},
         )
+        self.assertEqual(
+            migrated.instance_root(), Path(r"D:\VirtualMachiles\wsl\instances")
+        )
+
+    def test_instance_root_defaults_to_instances(self) -> None:
+        self.assertEqual(self.config.instance_root(), self.config.workspace().instances)
+
+    def test_instance_root_legacy_layout_uses_instances(self) -> None:
+        self.config.data["workspace_root"] = r"D:\VirtualMachiles\wsl"
+        self.config.data["distro_root"] = r"D:\VirtualMachiles\wsl"
+        self.assertEqual(
+            self.config.instance_root(), Path(r"D:\VirtualMachiles\wsl\instances")
+        )
+
+    def test_instance_root_keeps_custom_path(self) -> None:
+        self.config.data["workspace_root"] = r"D:\VirtualMachiles\wsl"
+        self.config.data["distro_root"] = r"E:\WSL\instances"
+        self.assertEqual(self.config.instance_root(), Path(r"E:\WSL\instances"))
 
     def test_workspace_resolves_relative_paths(self) -> None:
         self.config.data["workspace_root"] = "ws"
@@ -137,6 +155,57 @@ class ConfigTest(unittest.TestCase):
         ])
         self.assertEqual(len(self.config.port_forwards_for("node22")), 1)
         self.assertEqual(len(self.config.data["port_forwards"]), 1)
+
+    def test_instance_network_round_trip(self) -> None:
+        network = {
+            "enabled": True,
+            "scope": "temporary",
+            "ip": "192.168.163.241",
+            "services": ["mysql"],
+        }
+        self.config.set_instance_network("wsl-mysql", network)
+        self.assertEqual(self.config.instance_network("wsl-mysql"), network)
+        self.config.remove_instance_network("wsl-mysql")
+        self.assertEqual(self.config.instance_network("wsl-mysql"), {})
+
+    def test_disabled_instance_network_is_removed(self) -> None:
+        self.config.set_instance_network(
+            "wsl-mysql",
+            {"enabled": False, "scope": "temporary", "ip": "", "services": []},
+        )
+        self.assertEqual(self.config.data["instance_networks"], {})
+
+    def test_instance_network_validation(self) -> None:
+        cases = [
+            {"enabled": True, "scope": "forever", "ip": "192.168.1.5", "services": ["mysql"]},
+            {"enabled": True, "scope": "temporary", "ip": "bad", "services": ["mysql"]},
+            {"enabled": True, "scope": "temporary", "ip": "127.0.0.1", "services": ["mysql"]},
+            {"enabled": True, "scope": "temporary", "ip": "192.168.163.241", "services": []},
+            {"enabled": True, "scope": "temporary", "ip": "192.168.163.241", "services": ["bad name"]},
+        ]
+        for network in cases:
+            with self.subTest(network=network):
+                self.config.data["instance_networks"] = {"wsl-mysql": network}
+                with self.assertRaises(ConfigError):
+                    self.config.save()
+
+    def test_duplicate_isolated_ip_rejected(self) -> None:
+        self.config.data["instance_networks"] = {
+            "wsl-mysql": {
+                "enabled": True,
+                "scope": "temporary",
+                "ip": "192.168.163.241",
+                "services": ["mysql"],
+            },
+            "wsl-tomcat9": {
+                "enabled": True,
+                "scope": "permanent",
+                "ip": "192.168.163.241",
+                "services": ["tomcat"],
+            },
+        }
+        with self.assertRaises(ConfigError):
+            self.config.save()
 
     def test_migrate_legacy_keys(self) -> None:
         legacy = json.loads(self.path.read_text(encoding="utf-8"))
