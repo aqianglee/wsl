@@ -6,7 +6,7 @@ import logging
 import os
 import subprocess
 import winreg
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from app.proxy import current_proxy, proxy_url
@@ -31,6 +31,7 @@ class Distro:
     base_path: str
     vhdx_path: str
     vhdx_size: int
+    ip: str = ""
 
     @property
     def size_gb(self) -> float:

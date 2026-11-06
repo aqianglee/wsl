@@ -56,7 +56,7 @@ def main() -> int:
     window = MainWindow(config)
     instance.activated.connect(window.show_window)
     if not (silent and window.tray_available):
-        window.show()
+        window.showMaximized()
     return app.exec()
 
 

@@ -1,4 +1,4 @@
-"""表格牆：三列（圖標／名稱／操作），列高 48px。"""
+"""表格牆：五列（圖標／名稱／IP／大小／操作），列高 48px。"""
 
 from __future__ import annotations
 
@@ -22,9 +22,12 @@ from PySide6.QtWidgets import (
 from app.ui.cursors import refresh_cursor
 from app.ui.icons import (
     heart_pixmap,
-    play_pixmap,
+    install_dir_icon,
+    linux_archive_icon,
+    power_start_icon,
+    power_stop_icon,
     prohibition_pixmap,
-    stop_pixmap,
+    terminal_icon,
 )
 from app.ui.instance_card import (
     ICON_BUTTON_SIZE,
@@ -36,8 +39,10 @@ from app.wsl import Distro
 ROW_HEIGHT = 48
 HEADER_HEIGHT = 32
 ICON_COLUMN_WIDTH = 40
+IP_COLUMN_WIDTH = 150
+SIZE_COLUMN_WIDTH = 100
 COLUMN_PADDING = 12
-BUTTONS_WIDTH = 388
+BUTTONS_WIDTH = 348
 OPS_COLUMN_WIDTH = BUTTONS_WIDTH + COLUMN_PADDING * 2
 TABLE_MARGIN = 12
 
@@ -62,13 +67,15 @@ QLabel#tableHeaderText {{
     color: #7f8c8d;
 }}
 QToolButton#rowIcon {{
-    border: 1px solid palette(mid);
-    border-radius: 7px;
-    background: palette(button);
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    outline: none;
 }}
 QToolButton#rowIcon:hover {{
-    background: palette(midlight);
-    border-color: #4a90e2;
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 6px;
 }}
 QPushButton#rowAction {{
     border: 1px solid palette(mid);
@@ -82,8 +89,8 @@ QPushButton#rowAction:hover {{
 }}
 QToolButton#rowIcon:disabled, QPushButton#rowAction:disabled {{
     color: #9aa0a6;
-    background: palette(window);
-    border-color: palette(dark);
+    background: transparent;
+    border: none;
 }}
 """
 
@@ -144,6 +151,26 @@ class InstanceRow(QFrame):
         layout.addWidget(self._name, 1)
         layout.addWidget(_column_divider(self))
 
+        self._ip = QLabel(self)
+        ip_font = QFont("Consolas")
+        ip_font.setPointSize(10)
+        self._ip.setFont(ip_font)
+        self._ip.setFixedWidth(IP_COLUMN_WIDTH)
+        self._ip.setAlignment(Qt.AlignCenter)
+        self._ip.setStyleSheet("color: #555;")
+        layout.addWidget(self._ip)
+        layout.addWidget(_column_divider(self))
+
+        self._size = QLabel(self)
+        size_font = QFont()
+        size_font.setPointSize(10)
+        self._size.setFont(size_font)
+        self._size.setFixedWidth(SIZE_COLUMN_WIDTH)
+        self._size.setAlignment(Qt.AlignCenter)
+        self._size.setStyleSheet("color: #555;")
+        layout.addWidget(self._size)
+        layout.addWidget(_column_divider(self))
+
         ops = QHBoxLayout()
         ops.setContentsMargins(COLUMN_PADDING, 0, COLUMN_PADDING, 0)
         ops.setSpacing(8)
@@ -164,11 +191,8 @@ class InstanceRow(QFrame):
         self._terminal_btn = QToolButton(self)
         self._terminal_btn.setObjectName("rowIcon")
         self._terminal_btn.setFixedSize(ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
-        self._terminal_btn.setText(">_")
-        terminal_font = QFont("Consolas")
-        terminal_font.setBold(True)
-        terminal_font.setPointSize(8)
-        self._terminal_btn.setFont(terminal_font)
+        self._terminal_btn.setIcon(terminal_icon())
+        self._terminal_btn.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self._terminal_btn.setToolTip("開啟終端")
         self._terminal_btn.clicked.connect(
             lambda: self.terminal_requested.emit(self._distro.name)
@@ -177,9 +201,9 @@ class InstanceRow(QFrame):
 
         self._linux_btn = QPushButton("Linux 檔案", self)
         self._linux_btn.setObjectName("rowAction")
-        self._linux_btn.setIcon(self.style().standardIcon(QStyle.SP_DirIcon))
+        self._linux_btn.setIcon(linux_archive_icon())
         self._linux_btn.setIconSize(QSize(16, 16))
-        self._linux_btn.setFixedSize(120, ICON_BUTTON_SIZE)
+        self._linux_btn.setFixedSize(100, ICON_BUTTON_SIZE)
         self._linux_btn.clicked.connect(
             lambda: self.linux_files_requested.emit(self._distro.name)
         )
@@ -187,9 +211,9 @@ class InstanceRow(QFrame):
 
         self._install_btn = QPushButton("安裝目錄", self)
         self._install_btn.setObjectName("rowAction")
-        self._install_btn.setIcon(self.style().standardIcon(QStyle.SP_DriveHDIcon))
+        self._install_btn.setIcon(install_dir_icon())
         self._install_btn.setIconSize(QSize(16, 16))
-        self._install_btn.setFixedSize(120, ICON_BUTTON_SIZE)
+        self._install_btn.setFixedSize(100, ICON_BUTTON_SIZE)
         self._install_btn.clicked.connect(
             lambda: self.install_dir_requested.emit(self._distro.base_path)
         )
@@ -213,6 +237,15 @@ class InstanceRow(QFrame):
         self._system = is_system
         self._name.setText(distro.name)
 
+        if distro.ip:
+            self._ip.setText(distro.ip)
+        elif distro.running:
+            self._ip.setText("…")
+        else:
+            self._ip.setText("-")
+
+        self._size.setText(f"{distro.size_gb:.1f} GB")
+
         if is_system:
             self._icon.setPixmap(prohibition_pixmap())
             self._icon.setToolTip(SYSTEM_REASON)
@@ -224,10 +257,10 @@ class InstanceRow(QFrame):
             self._icon.setToolTip("")
 
         if distro.running:
-            self._power_btn.setIcon(QIcon(stop_pixmap()))
+            self._power_btn.setIcon(power_stop_icon())
             self._power_btn.setToolTip("執行中，點擊終止")
         else:
-            self._power_btn.setIcon(QIcon(play_pixmap()))
+            self._power_btn.setIcon(power_start_icon())
             self._power_btn.setToolTip("已停止，點擊啟動")
 
         enabled = not is_system
@@ -308,6 +341,22 @@ class InstanceTable(QWidget):
         name_title.setFont(_header_font())
         name_title.setAlignment(Qt.AlignCenter)
         self._header_layout.addWidget(name_title, 1)
+        self._header_layout.addWidget(_column_divider(header_row))
+
+        ip_title = QLabel("IP", header_row)
+        ip_title.setObjectName("tableHeaderText")
+        ip_title.setFont(_header_font())
+        ip_title.setAlignment(Qt.AlignCenter)
+        ip_title.setFixedWidth(IP_COLUMN_WIDTH)
+        self._header_layout.addWidget(ip_title)
+        self._header_layout.addWidget(_column_divider(header_row))
+
+        size_title = QLabel("大小", header_row)
+        size_title.setObjectName("tableHeaderText")
+        size_title.setFont(_header_font())
+        size_title.setAlignment(Qt.AlignCenter)
+        size_title.setFixedWidth(SIZE_COLUMN_WIDTH)
+        self._header_layout.addWidget(size_title)
         self._header_layout.addWidget(_column_divider(header_row))
 
         ops_title = QLabel("操作", header_row)
@@ -394,6 +443,14 @@ class InstanceTable(QWidget):
         self._order = [distro.name for distro in distros]
         self._relayout()
         self._schedule_header_margin()
+
+    def update_distro_info(
+        self, name: str, distro: Distro, is_system: bool
+    ) -> None:
+        """輕量更新單行（如 IP 回填），不重新排版。"""
+        row = self._rows.get(name)
+        if row is not None:
+            row.update_distro(distro, is_system)
 
     def _relayout(self) -> None:
         while self._rows_layout.count():

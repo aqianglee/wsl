@@ -83,6 +83,14 @@ class CardWall(QWidget):
         self._order = [distro.name for distro in distros]
         self._relayout(force=True)
 
+    def update_distro_info(
+        self, name: str, distro: Distro, is_system: bool
+    ) -> None:
+        """輕量更新單張卡片（如 IP 回填），不重新排版。"""
+        card = self._cards.get(name)
+        if card is not None:
+            card.update_distro(distro, is_system)
+
     def _relayout(self, force: bool = False) -> None:
         width = self._available_width()
         if width <= 0:
