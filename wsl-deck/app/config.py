@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import os
+import re
 import shlex
 import shutil
 from pathlib import Path
@@ -61,7 +64,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "distro_ip": 'wsl.exe -d "{name}" -- hostname -I',
     },
     "port_forwards": [],
+    "instance_networks": {},
 }
+
+NETWORK_SCOPES = ("temporary", "permanent")
+SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9_.@:-]+$")
 
 LEGACY_KEYS = {
     "preview_commands": "advanced_mode",
@@ -193,6 +200,23 @@ class Config:
             self.resolve_path(str(self.data["snapshot_root"])),
         )
 
+    def instance_root(self) -> Path:
+        """新增／複製 instance 的預設根目錄。
+
+        distro_root 空白或等於工作目錄（舊佈局，實例散落在根層）時，
+        改用工作目錄下的 instances；其他自訂路徑則原樣沿用。
+        """
+        distro = str(self.data.get("distro_root") or "").strip()
+        if not distro:
+            return self.workspace().instances
+        distro_path = self.resolve_path(distro)
+        workspace = self.resolve_path(str(self.data["workspace_root"]))
+        if os.path.normcase(os.path.abspath(distro_path)) == os.path.normcase(
+            os.path.abspath(workspace)
+        ):
+            return self.workspace().instances
+        return distro_path
+
     def get(self, key: str, default: Any = None) -> Any:
         return self.data.get(key, default)
 
@@ -220,6 +244,30 @@ class Config:
         self.data["port_forwards"] = keep + rules
         self.save()
 
+    def instance_network(self, distro: str) -> dict[str, Any]:
+        """取得指定 instance 的 C 方案設定（未設定時回傳空物件）。"""
+        networks = self.data.get("instance_networks", {})
+        if not isinstance(networks, dict):
+            return {}
+        raw = networks.get(distro)
+        return raw if isinstance(raw, dict) else {}
+
+    def set_instance_network(self, distro: str, network: dict[str, Any]) -> None:
+        """寫入 C 方案設定；未啟用時視為移除。"""
+        networks = dict(self.data.get("instance_networks", {}))
+        if network.get("enabled"):
+            networks[distro] = network
+        else:
+            networks.pop(distro, None)
+        self.data["instance_networks"] = networks
+        self.save()
+
+    def remove_instance_network(self, distro: str) -> None:
+        networks = dict(self.data.get("instance_networks", {}))
+        if networks.pop(distro, None) is not None:
+            self.data["instance_networks"] = networks
+            self.save()
+
     def command(self, key: str, **values: Any) -> list[str]:
         template = self.data["commands"].get(key)
         if not template:
@@ -240,6 +288,7 @@ class Config:
             "snapshot_root",
             "commands",
             "port_forwards",
+            "instance_networks",
         ):
             if key not in self.data:
                 raise ConfigError(f"缺少配置項：{key}")
@@ -310,6 +359,46 @@ class Config:
             if port in ports:
                 raise ConfigError(f"Windows 端口重複：{port}")
             ports.add(port)
+        self._validate_instance_networks()
+
+    def _validate_instance_networks(self) -> None:
+        networks = self.data.get("instance_networks")
+        if not isinstance(networks, dict):
+            raise ConfigError("instance_networks 必須是物件")
+        used_ips: dict[str, str] = {}
+        for distro, raw in networks.items():
+            if not isinstance(distro, str) or not distro.strip():
+                raise ConfigError("instance_networks 的 instance 名稱不可空白")
+            if not isinstance(raw, dict):
+                raise ConfigError(f"{distro} 的網路設定必須是物件")
+            enabled = raw.get("enabled", False)
+            if not isinstance(enabled, bool):
+                raise ConfigError(f"{distro} 的 enabled 必須是布林值")
+            if not enabled:
+                continue
+            scope = raw.get("scope")
+            if scope not in NETWORK_SCOPES:
+                raise ConfigError(f"{distro} 的 scope 必須是 temporary／permanent")
+            ip = str(raw.get("ip") or "").strip()
+            try:
+                address = ipaddress.ip_address(ip)
+            except ValueError as exc:
+                raise ConfigError(f"{distro} 的 IP 格式不正確：{ip}") from exc
+            if address.is_loopback or address.is_multicast or address.is_unspecified:
+                raise ConfigError(f"{distro} 的 IP 不可使用：{ip}")
+            if ip in used_ips:
+                raise ConfigError(
+                    f"IP {ip} 同時被 {used_ips[ip]} 與 {distro} 使用"
+                )
+            used_ips[ip] = distro
+            services = raw.get("services")
+            if not isinstance(services, list) or not services:
+                raise ConfigError(f"{distro} 至少需要一個要搬入 netns 的服務")
+            for service in services:
+                if not isinstance(service, str) or not SERVICE_NAME_RE.match(
+                    service.strip()
+                ):
+                    raise ConfigError(f"{distro} 的服務名稱不合法：{service}")
 
     @staticmethod
     def _validate_port_rule(rule: Any) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shlex
 import socket
 import subprocess
 from dataclasses import dataclass, field
@@ -82,11 +83,11 @@ def parse_listen_ports(text: str) -> list[int]:
     return sorted(ports)
 
 
-def scan_tcp_ports(name: str) -> list[int]:
-    output = run_wsl(
-        ["-d", name, "--", "sh", "-c", "ss -tln 2>/dev/null || netstat -tln"],
-        timeout=120,
-    )
+def scan_tcp_ports(name: str, netns: str | None = None) -> list[int]:
+    command = "ss -tln 2>/dev/null || netstat -tln"
+    if netns:
+        command = f"ip netns exec {shlex.quote(netns)} sh -c {shlex.quote(command)}"
+    output = run_wsl(["-d", name, "--", "sh", "-c", command], timeout=120)
     return parse_listen_ports(output)
 
 
@@ -195,9 +196,11 @@ def apply_rules(
     targets: list[tuple[str, list[dict]]],
     cleanup: list[tuple[str, int]] | None = None,
     stage: Stage | None = None,
+    ip_resolver: Callable[[str], str] | None = None,
 ) -> ApplyResult:
     from app.admin import run_admin_job
 
+    resolve_ip = ip_resolver or get_distro_ip
     result = ApplyResult(ok=True)
     resolved: list[tuple[str, str, list[dict]]] = []
     try:
@@ -213,7 +216,7 @@ def apply_rules(
             if stage:
                 stage(f"正在取得 {name} 的 IP…")
             try:
-                ip = get_distro_ip(name)
+                ip = resolve_ip(name)
             except WslError as exc:
                 result.ok = False
                 result.errors.append(f"{name}：取得 IP 失敗（{exc}）")

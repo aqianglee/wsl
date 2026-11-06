@@ -45,6 +45,13 @@ from app.distro_settings import (
     set_version,
 )
 from app.logbus import log_bus
+from app.netns import (
+    cleanup_all as cleanup_netns,
+    cleanup_temporary,
+    effective_ip,
+    ensure_after_start,
+    netns_name,
+)
 from app.network import apply_rules, rule_status, scan_tcp_ports, show_portproxy
 from app.proxy import apply_runtime, parse_config
 from app.shell import open_path, open_terminal
@@ -68,7 +75,6 @@ from app.ui.wizard import NewInstanceWizard
 from app.ui.workers import TaskWorker
 from app.wsl import (
     Distro,
-    get_distro_ip,
     is_system_distro,
     list_distros,
     set_default_distro,
@@ -406,6 +412,38 @@ class MainWindow(QMainWindow):
             if has_rules:
                 QTimer.singleShot(0, self._auto_apply_all)
 
+        self._load_homepage_ips(distros)
+
+    def _load_homepage_ips(self, distros: list[Distro]) -> None:
+        """對所有 running 的 instance 非同步查 IP，回填到首頁卡片與列表。"""
+        for distro in distros:
+            if not distro.running or self._is_system(distro.name):
+                continue
+            self._run_task(
+                partial(self._ip_for, distro.name),
+                partial(self._on_homepage_ip, distro.name),
+                partial(self._on_homepage_ip_error, distro.name),
+            )
+
+    def _on_homepage_ip(self, name: str, ip: str) -> None:
+        for i, distro in enumerate(self._distros):
+            if distro.name == name:
+                self._distros[i] = replace(distro, ip=ip)
+                system_prefixes = self.config.get("system_instances", [])
+                is_system = is_system_distro(name, system_prefixes)
+                self.card_wall.update_distro_info(name, self._distros[i], is_system)
+                self.instance_table.update_distro_info(name, self._distros[i], is_system)
+                if (
+                    self._current is not None
+                    and self._current.name == name
+                    and self._stack.currentWidget() is self._detail_page
+                ):
+                    self._detail_page.set_ip(ip)
+                break
+
+    def _on_homepage_ip_error(self, name: str, message: str) -> None:
+        logger.warning("取得 %s 的 IP 失敗：%s", name, message)
+
     def _on_refresh_error(self, message: str) -> None:
         self._refresh_busy = False
         logger.error("讀取 WSL 狀態失敗：%s", message)
@@ -474,6 +512,10 @@ class MainWindow(QMainWindow):
             or not self._tray.available
         ):
             self._quitting = True
+            try:
+                cleanup_netns(self.config.data, restart=True)
+            except Exception:  # noqa: BLE001 - 結束時盡量還原
+                logger.warning("結束前還原臨時 netns 失敗")
             self._tray.hide()
             event.accept()
             app = QApplication.instance()
@@ -586,10 +628,13 @@ class MainWindow(QMainWindow):
 
     def _load_ip(self, name: str) -> None:
         self._run_task(
-            partial(get_distro_ip, name),
+            partial(self._ip_for, name),
             partial(self._on_ip, name),
             partial(self._on_ip_error, name),
         )
+
+    def _ip_for(self, name: str) -> str:
+        return effective_ip(name, self.config.instance_network(name))
 
     def _on_ip(self, name: str, ip: str) -> None:
         if (
@@ -608,8 +653,14 @@ class MainWindow(QMainWindow):
         if self._is_system(name):
             return
         logger.info("啟動 %s…", name)
+        network = self.config.instance_network(name)
+
+        def task():
+            start_distro(name)
+            return ensure_after_start(name, network)
+
         self._run_task(
-            partial(start_distro, name),
+            task,
             partial(self._after_started, name),
             partial(self._on_start_error, name),
         )
@@ -625,8 +676,20 @@ class MainWindow(QMainWindow):
         if self._is_system(name):
             return
         logger.info("終止 %s…", name)
+        network = self.config.instance_network(name)
+
+        def task():
+            if network.get("enabled") and network.get("scope") != "permanent":
+                cleanup_temporary(
+                    name,
+                    network.get("services", []),
+                    str(network.get("ip") or ""),
+                    restart=False,
+                )
+            terminate_distro(name)
+
         self._run_task(
-            partial(terminate_distro, name),
+            task,
             lambda _result: self._after_action(f"已終止 {name}"),
             partial(self._on_action_error, f"終止 {name}"),
         )
@@ -662,8 +725,13 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.Yes:
             return
         logger.info("全部關機…")
+
+        def task():
+            cleanup_netns(self.config.data, restart=False)
+            shutdown_all()
+
         self._run_task(
-            shutdown_all,
+            task,
             lambda _result: self._after_action("已全部關機"),
             partial(self._on_action_error, "全部關機"),
         )
@@ -704,7 +772,7 @@ class MainWindow(QMainWindow):
 
     def _new_instance(self) -> None:
         wizard = NewInstanceWizard(
-            self.config.resolve_path(self.config.get("distro_root", ".")),
+            self.config.instance_root(),
             [distro.name for distro in self._distros],
             self,
         )
@@ -801,13 +869,19 @@ class MainWindow(QMainWindow):
             count = self.config.remove_port_forwards(name)
             if count:
                 logger.info("已移除 %s 的 %d 條端口規則", name, count)
+            self.config.remove_instance_network(name)
             if self._current is not None and self._current.name == name:
                 self._show_main()
             self._after_action(f"已刪除 {name}")
             if ports:
                 self._run_operation(
                     "移除網路規則",
-                    partial(apply_rules, [], [(name, port) for port in ports]),
+                    partial(
+                        apply_rules,
+                        [],
+                        [(name, port) for port in ports],
+                        ip_resolver=self._ip_for,
+                    ),
                     self._on_delete_cleanup_done,
                     lambda _message: None,
                 )
@@ -876,31 +950,66 @@ class MainWindow(QMainWindow):
         sparse: bool | None,
     ) -> None:
         dialog = InstanceSettingsDialog(
-            distro, running, settings, sparse, self
+            distro,
+            running,
+            settings,
+            sparse,
+            self,
+            network=self.config.instance_network(distro.name),
         )
         dialog.maintenance_requested.connect(
             partial(self._run_instance_maintenance, distro.name)
         )
-        if dialog.exec() != QDialog.Accepted or not running:
+        if dialog.exec() != QDialog.Accepted:
             return
-        if not dialog.has_changes():
+        network = dialog.network_values()
+        network_changed = dialog.network_changed()
+        settings_changed = running and dialog.has_changes()
+        if not network_changed and not settings_changed:
             return
-        values = dialog.values()
+
+        if network_changed:
+            try:
+                self.config.set_instance_network(distro.name, network)
+            except ConfigError as exc:
+                QMessageBox.warning(self, "網路隔離設定未儲存", str(exc))
+                return
+
+        if not running:
+            logger.info("已儲存 %s 的設定，啟動時生效", distro.name)
+            QMessageBox.information(
+                self,
+                "設定已儲存",
+                "instance 目前停止；網路隔離設定將在下次啟動時套用。",
+            )
+            self.refresh()
+            return
+
+        values = dialog.values() if settings_changed else None
+
+        def task():
+            if values is not None:
+                apply_settings(distro.name, distro.version, values)
+            if network_changed:
+                return ensure_after_start(distro.name, network, force=True)
+            return []
+
+        def done(warnings) -> None:
+            if values is not None:
+                logger.info("已更新 %s 的 instance 設定", distro.name)
+            if warnings:
+                logger.warning("；".join(warnings))
+                QMessageBox.warning(
+                    self, "網路隔離未完全套用", "\n".join(warnings)
+                )
+            self.refresh()
+
         self._run_operation(
             f"套用 {distro.name} 設定",
-            partial(apply_settings, distro.name, distro.version, values),
-            lambda _result: self._after_settings_saved(distro.name),
-            lambda _message: None,
+            task,
+            done,
+            lambda _message: self.refresh(),
         )
-
-    def _after_settings_saved(self, name: str) -> None:
-        logger.info("已儲存 %s 的 instance 設定，下次啟動生效", name)
-        QMessageBox.information(
-            self,
-            "設定已儲存",
-            "設定已儲存，需終止 instance 後重新啟動才生效。",
-        )
-        self.refresh()
 
     def _run_instance_maintenance(self, name: str, kind: str, value) -> None:
         distro = self._find(name)
@@ -975,10 +1084,9 @@ class MainWindow(QMainWindow):
             partial(self._on_network_error, name, rules),
         )
 
-    @staticmethod
-    def _network_snapshot(name: str, running: bool):
+    def _network_snapshot(self, name: str, running: bool):
         entries = show_portproxy()
-        ip = get_distro_ip(name) if running else ""
+        ip = self._ip_for(name) if running else ""
         return ip, entries
 
     def _on_network_snapshot(self, name: str, rules: list[dict], snapshot) -> None:
@@ -1165,7 +1273,7 @@ class MainWindow(QMainWindow):
         rules = self.config.port_forwards_for(name)
         self._run_operation(
             "套用網路規則",
-            partial(apply_rules, [(name, rules)], cleanup),
+            partial(apply_rules, [(name, rules)], cleanup, ip_resolver=self._ip_for),
             partial(self._on_apply_done, name),
             lambda _message: self._refresh_network(name),
         )
@@ -1218,9 +1326,11 @@ class MainWindow(QMainWindow):
         self._scan_ports(distro.name)
 
     def _scan_ports(self, name: str) -> None:
+        network = self.config.instance_network(name)
+        namespace = netns_name(name) if network.get("enabled") else None
         self._run_operation(
             "掃描監聽端口",
-            partial(scan_tcp_ports, name),
+            partial(scan_tcp_ports, name, namespace),
             partial(self._show_scan_result, name),
             lambda _message: None,
         )
@@ -1246,9 +1356,14 @@ class MainWindow(QMainWindow):
             return
         self._after_rule_change(name)
 
-    def _after_started(self, name: str) -> None:
+    def _after_started(self, name: str, messages=None) -> None:
         logger.info("已啟動 %s", name)
         self._mark_running(name)
+        if messages:
+            logger.warning("；".join(messages))
+            QMessageBox.warning(
+                self, "網路隔離未完全套用", "\n".join(messages)
+            )
         if self._scan_after_start == name:
             self._scan_after_start = ""
             self._scan_ports(name)
@@ -1287,7 +1402,7 @@ class MainWindow(QMainWindow):
         logger.info("重新套用 %d 個 instance 的網路規則…", len(targets))
         self._run_operation(
             "重新套用網路規則",
-            partial(apply_rules, targets),
+            partial(apply_rules, targets, ip_resolver=self._ip_for),
             self._on_auto_apply_done,
             lambda _message: self.refresh(),
         )
