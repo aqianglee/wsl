@@ -1,5 +1,8 @@
 # WSL Deck — 進度與下一步（M3／M4／M5）
 
+> **已歸檔（2026-11-05）**：本文件內容已過時（路徑仍寫 `d:/VirtualMachiles/wsl`），僅保留歷史記錄。
+> 最新交接文件請看 [docs/handover/00-overview.md](../docs/handover/00-overview.md)。
+
 > 用途：切換新對話時，先讀這份文件即可接續。
 > 完整需求與決策見 [wsl-deck-mvp.md](file:///d:/VirtualMachiles/wsl/plans/wsl-deck-mvp.md)。
 > 調研背景見 [wsl-ui-research.md](file:///d:/VirtualMachiles/wsl/plans/wsl-ui-research.md)。
