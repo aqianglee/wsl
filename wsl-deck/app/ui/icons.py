@@ -1,8 +1,13 @@
-"""以 QPainter 產生的 Instance 圖標，供卡片與表格共用。"""
+"""以 QPainter 產生的 Instance 圖標，供卡片與表格共用。
+
+優先從 assets/ 目錄載入對應的 SVG；缺失時回退到內建 QPainter 繪製。
+"""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from pathlib import Path
+
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
     QColor,
     QIcon,
@@ -13,10 +18,85 @@ from PySide6.QtGui import (
     QPolygonF,
 )
 
-ICON_SIZE = 14
+ICON_SIZE = 22
 ACTIVE_ICON_COLOR = "#ffffff"
 INACTIVE_ICON_COLOR = "#5f6368"
 SETTINGS_ICON_COLOR = "#2D7FF9"
+
+_ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
+
+
+def _svg_icon(filename: str) -> QIcon | None:
+    """從 assets/ 載入 SVG 作為 QIcon；檔案不存在時回傳 None。"""
+    path = _ASSETS_DIR / filename
+    if not path.is_file():
+        return None
+    icon = QIcon()
+    for size in (16, 24, 32, 48, 64):
+        icon.addFile(str(path), QSize(size, size))
+    return icon
+
+
+def power_start_icon() -> QIcon:
+    """開機：綠底白三角（SVG），缺失回退 play_pixmap。"""
+    if icon := _svg_icon("ic_power_start.svg"):
+        return icon
+    return QIcon(play_pixmap())
+
+
+def power_stop_icon() -> QIcon:
+    """關機：紅底白方塊（SVG），缺失回退 stop_pixmap。"""
+    if icon := _svg_icon("ic_power_stop.svg"):
+        return icon
+    return QIcon(stop_pixmap())
+
+
+def terminal_icon() -> QIcon:
+    """終端：黑底白符號（SVG），缺失回退空 icon。"""
+    if icon := _svg_icon("ic_terminal.svg"):
+        return icon
+    return QIcon()
+
+
+def heart_icon() -> QIcon:
+    """關愛：愛心（SVG），缺失回退 heart_pixmap。"""
+    if icon := _svg_icon("ic_heart_default.svg"):
+        return icon
+    return QIcon(heart_pixmap())
+
+
+def size_disk_icon() -> QIcon:
+    """容量：硬碟（SVG），缺失回退空 icon。"""
+    if icon := _svg_icon("ic_size_disk.svg"):
+        return icon
+    return QIcon()
+
+
+def linux_archive_icon() -> QIcon:
+    """Linux 檔案按鈕（SVG），缺失回退 SP_DirIcon。"""
+    if icon := _svg_icon("ic_linux_archive.svg"):
+        return icon
+    from PySide6.QtWidgets import QStyle, QWidget
+
+    w = QWidget()
+    return w.style().standardIcon(QStyle.SP_DirIcon)
+
+
+def install_dir_icon() -> QIcon:
+    """安裝目錄按鈕（SVG），缺失回退 SP_DriveHDIcon。"""
+    if icon := _svg_icon("ic_install_dir.svg"):
+        return icon
+    from PySide6.QtWidgets import QStyle, QWidget
+
+    w = QWidget()
+    return w.style().standardIcon(QStyle.SP_DriveHDIcon)
+
+
+def forbidden_icon() -> QIcon:
+    """系統禁止（SVG），缺失回退 prohibition_pixmap。"""
+    if icon := _svg_icon("ic_forbidden.svg"):
+        return icon
+    return QIcon(prohibition_pixmap())
 
 
 def play_pixmap(size: int = ICON_SIZE, color: str = "#2ecc71") -> QPixmap:
