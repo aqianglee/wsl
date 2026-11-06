@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
@@ -18,6 +20,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from app.config import SERVICE_NAME_RE
 
 from app.distro_settings import (
     InstanceSettings,
@@ -42,6 +46,7 @@ class InstanceSettingsDialog(DialogBase):
         settings: InstanceSettings | None,
         sparse_state: bool | None,
         parent=None,
+        network: dict | None = None,
     ):
         super().__init__(f"Instance 設定 — {distro.name}", parent, width=640)
         self.setWindowIcon(settings_icon())
@@ -49,18 +54,20 @@ class InstanceSettingsDialog(DialogBase):
         self._distro = distro
         self._running = running
         self._initial = settings
+        self._network_initial = self._normalize_network(network)
         self._sparse_state = sparse_state
 
         self._build_info()
         self._build_common(settings)
+        self._build_network(network)
         self._build_maintenance()
 
-        self._ok_btn.setEnabled(running)
+        self._ok_btn.setEnabled(True)
         if running:
             self.add_info("常用設定的變更需終止 instance 後重新啟動才生效。")
         else:
-            self._ok_btn.setToolTip("啟動 instance 後才能修改常用設定")
-            self.add_info("instance 已停止：常用設定唯讀，維護操作可用。")
+            self._ok_btn.setToolTip("instance 停止時仍可儲存網路隔離設定")
+            self.add_info("instance 已停止：常用設定唯讀；網路隔離設定可先儲存，啟動時生效。")
         self._ok_btn.clicked.connect(self._on_ok)
         refresh_cursor(self._ok_btn)
 
@@ -167,6 +174,89 @@ class InstanceSettingsDialog(DialogBase):
         self._proxy_host_widget.setEnabled(checked)
         self._proxy_port.setEnabled(checked)
 
+    @staticmethod
+    def _normalize_network(network: dict | None) -> dict:
+        raw = network if isinstance(network, dict) else {}
+        scope = raw.get("scope")
+        if scope not in ("temporary", "permanent"):
+            scope = "temporary"
+        services = raw.get("services")
+        services = (
+            [str(item).strip() for item in services if str(item).strip()]
+            if isinstance(services, list)
+            else []
+        )
+        return {
+            "enabled": bool(raw.get("enabled", False)),
+            "scope": scope,
+            "ip": str(raw.get("ip") or "").strip(),
+            "services": services,
+        }
+
+    def _build_network(self, network: dict | None) -> None:
+        group = QGroupBox("網路隔離（C 方案）", self)
+        form = QFormLayout(group)
+        form.setSpacing(10)
+
+        self._net_enabled = QCheckBox("啟用 C 方案（獨立 netns）", group)
+        form.addRow("", self._net_enabled)
+
+        self._net_scope = QComboBox(group)
+        self._net_scope.addItem("臨時：僅 WSL Deck 啟動生效", "temporary")
+        self._net_scope.addItem("永久：WSL Deck 與 wt 啟動都生效", "permanent")
+        self._net_scope.setFixedHeight(FORM_CONTROL_HEIGHT)
+        form.addRow("啟用範圍", self._net_scope)
+
+        self._net_ip = QLineEdit(group)
+        self._net_ip.setFixedHeight(FORM_CONTROL_HEIGHT)
+        self._net_ip.setPlaceholderText("例如 192.168.163.241")
+        form.addRow("隔離 IP", self._net_ip)
+
+        self._net_services = QLineEdit(group)
+        self._net_services.setFixedHeight(FORM_CONTROL_HEIGHT)
+        self._net_services.setPlaceholderText("例如 mysql，多個以逗號分隔")
+        form.addRow("要搬入的服務", self._net_services)
+
+        note = QLabel(
+            "服務需為 systemd unit。臨時模式不寫入永久設定；永久模式會寫入 systemd unit "
+            "與 drop-in，任何方式啟動都生效。變更服務會重啟該服務。",
+            group,
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: gray;")
+        form.addRow("", note)
+
+        initial = self._normalize_network(network)
+        self._net_enabled.setChecked(initial["enabled"])
+        index = self._net_scope.findData(initial["scope"])
+        self._net_scope.setCurrentIndex(max(0, index))
+        self._net_ip.setText(initial["ip"])
+        self._net_services.setText(", ".join(initial["services"]))
+
+        self._net_enabled.toggled.connect(self._on_network_toggled)
+        self._on_network_toggled(initial["enabled"])
+        self._layout.insertWidget(2, group)
+
+    def _on_network_toggled(self, checked: bool) -> None:
+        for widget in (self._net_scope, self._net_ip, self._net_services):
+            widget.setEnabled(checked)
+
+    def network_values(self) -> dict:
+        services = [
+            item.strip()
+            for item in self._net_services.text().replace("，", ",").split(",")
+            if item.strip()
+        ]
+        return {
+            "enabled": self._net_enabled.isChecked(),
+            "scope": str(self._net_scope.currentData()),
+            "ip": self._net_ip.text().strip(),
+            "services": services,
+        }
+
+    def network_changed(self) -> bool:
+        return self.network_values() != self._network_initial
+
     def _detect_proxy_host(self) -> None:
         ip = detect_instance_host_ip(self._distro.name)
         if not ip:
@@ -230,7 +320,7 @@ class InstanceSettingsDialog(DialogBase):
                 button.setEnabled(False)
                 button.setToolTip("僅 WSL 2 支援此操作")
 
-        self._layout.insertWidget(2, group)
+        self._layout.insertWidget(3, group)
 
     def _sparse_text(self) -> str:
         if self._sparse_state is True:
@@ -254,6 +344,29 @@ class InstanceSettingsDialog(DialogBase):
         return self._initial is not None and self.values() != self._initial
 
     def _on_ok(self) -> None:
+        network = self.network_values()
+        if network["enabled"]:
+            if not network["ip"]:
+                self.show_error("啟用 C 方案時，隔離 IP 不可空白")
+                return
+            try:
+                address = ipaddress.ip_address(network["ip"])
+            except ValueError:
+                self.show_error(f"隔離 IP 格式不正確：{network['ip']}")
+                return
+            if address.is_loopback or address.is_multicast or address.is_unspecified:
+                self.show_error("隔離 IP 不可使用此位址")
+                return
+            if not network["services"]:
+                self.show_error("請填寫要搬入 netns 的 systemd 服務")
+                return
+            for service in network["services"]:
+                if not SERVICE_NAME_RE.match(service):
+                    self.show_error(f"服務名稱不合法：{service}")
+                    return
+        if not self._running:
+            self.accept()
+            return
         user = self._user_edit.text().strip()
         if not user:
             self.show_error("使用者名稱不可空白")
