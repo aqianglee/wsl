@@ -45,7 +45,7 @@ WSL 實例裝多了之後，哪台是幹嘛的、IP 多少、磁碟吃了多少�
 ## 跑起來
 
 ```powershell
-git clone https://github.com/<your-account>/wsl-deck.git
+git clone https://github.com/aqianglee/wsl.git
 cd wsl-deck\wsl-deck
 py -3.14 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
