@@ -10,14 +10,12 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
     QSpinBox,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -29,7 +27,11 @@ from app.distro_settings import (
     user_exists,
 )
 from app.ui.cursors import refresh_cursor
-from app.ui.dialog_base import DialogBase, FORM_CONTROL_HEIGHT
+from app.ui.dialog_base import (
+    DialogBase,
+    FORM_CONTROL_HEIGHT,
+    make_card,
+)
 from app.ui.icons import settings_icon
 from app.wsl import Distro
 
@@ -83,34 +85,35 @@ class InstanceSettingsDialog(DialogBase):
         self._layout.insertWidget(0, info)
 
     def _build_common(self, settings: InstanceSettings | None) -> None:
-        group = QGroupBox("常用設定", self)
-        form = QFormLayout(group)
+        card, box = make_card(self, "常用設定")
+        form = QFormLayout()
         form.setSpacing(10)
+        box.addLayout(form)
 
-        self._user_edit = QLineEdit(group)
+        self._user_edit = QLineEdit(card)
         self._user_edit.setMinimumWidth(220)
         self._user_edit.setFixedHeight(FORM_CONTROL_HEIGHT)
         self._user_edit.setPlaceholderText("例如 root、ubuntu")
         form.addRow("預設使用者", self._user_edit)
 
-        self._systemd_check = QCheckBox("啟用 systemd（僅 WSL 2）", group)
+        self._systemd_check = QCheckBox("啟用 systemd（僅 WSL 2）", card)
         self._append_path_check = QCheckBox(
-            "將 Windows PATH 追加到 Linux PATH", group
+            "將 Windows PATH 追加到 Linux PATH", card
         )
         self._automount_check = QCheckBox(
-            "自動掛載 Windows 磁碟（/mnt/c 等）", group
+            "自動掛載 Windows 磁碟（/mnt/c 等）", card
         )
         form.addRow("", self._systemd_check)
         form.addRow("", self._append_path_check)
         form.addRow("", self._automount_check)
 
-        self._proxy_check = QCheckBox("啟用 SOCKS5 代理", group)
+        self._proxy_check = QCheckBox("啟用 SOCKS5 代理", card)
         form.addRow("", self._proxy_check)
 
-        self._proxy_host = QLineEdit(group)
+        self._proxy_host = QLineEdit(card)
         self._proxy_host.setFixedHeight(FORM_CONTROL_HEIGHT)
         self._proxy_host.setPlaceholderText("例如 192.168.160.1")
-        self._proxy_detect_btn = QPushButton("偵測主機 IP", group)
+        self._proxy_detect_btn = QPushButton("偵測主機 IP", card)
         self._proxy_detect_btn.setFixedHeight(FORM_CONTROL_HEIGHT)
         self._proxy_detect_btn.clicked.connect(self._detect_proxy_host)
         refresh_cursor(self._proxy_detect_btn)
@@ -119,18 +122,18 @@ class InstanceSettingsDialog(DialogBase):
         host_row.setSpacing(8)
         host_row.addWidget(self._proxy_host, 1)
         host_row.addWidget(self._proxy_detect_btn)
-        self._proxy_host_widget = QWidget(group)
+        self._proxy_host_widget = QWidget(card)
         self._proxy_host_widget.setLayout(host_row)
         form.addRow("代理主機", self._proxy_host_widget)
 
-        self._proxy_port = QSpinBox(group)
+        self._proxy_port = QSpinBox(card)
         self._proxy_port.setRange(1, 65535)
         self._proxy_port.setValue(7890)
         self._proxy_port.setFixedHeight(FORM_CONTROL_HEIGHT)
         form.addRow("代理埠", self._proxy_port)
 
         proxy_note = QLabel(
-            "寫入 /etc/profile.d，新登入 shell 生效；apt 不支援 SOCKS5。", group
+            "寫入 /etc/profile.d，新登入 shell 生效；apt 不支援 SOCKS5。", card
         )
         proxy_note.setWordWrap(True)
         proxy_note.setStyleSheet("color: gray;")
@@ -168,7 +171,7 @@ class InstanceSettingsDialog(DialogBase):
             self._systemd_check.setEnabled(False)
             self._systemd_check.setToolTip("WSL 1 不支援 systemd")
 
-        self._layout.insertWidget(1, group)
+        self._layout.insertWidget(1, card)
 
     def _on_proxy_toggled(self, checked: bool) -> None:
         self._proxy_host_widget.setEnabled(checked)
@@ -194,25 +197,26 @@ class InstanceSettingsDialog(DialogBase):
         }
 
     def _build_network(self, network: dict | None) -> None:
-        group = QGroupBox("網路隔離（C 方案）", self)
-        form = QFormLayout(group)
+        card, box = make_card(self, "網路隔離（C 方案）")
+        form = QFormLayout()
         form.setSpacing(10)
+        box.addLayout(form)
 
-        self._net_enabled = QCheckBox("啟用 C 方案（獨立 netns）", group)
+        self._net_enabled = QCheckBox("啟用 C 方案（獨立 netns）", card)
         form.addRow("", self._net_enabled)
 
-        self._net_scope = QComboBox(group)
+        self._net_scope = QComboBox(card)
         self._net_scope.addItem("臨時：僅 WSL Deck 啟動生效", "temporary")
         self._net_scope.addItem("永久：WSL Deck 與 wt 啟動都生效", "permanent")
         self._net_scope.setFixedHeight(FORM_CONTROL_HEIGHT)
         form.addRow("啟用範圍", self._net_scope)
 
-        self._net_ip = QLineEdit(group)
+        self._net_ip = QLineEdit(card)
         self._net_ip.setFixedHeight(FORM_CONTROL_HEIGHT)
         self._net_ip.setPlaceholderText("例如 192.168.163.241")
         form.addRow("隔離 IP", self._net_ip)
 
-        self._net_services = QLineEdit(group)
+        self._net_services = QLineEdit(card)
         self._net_services.setFixedHeight(FORM_CONTROL_HEIGHT)
         self._net_services.setPlaceholderText("例如 mysql，多個以逗號分隔")
         form.addRow("要搬入的服務", self._net_services)
@@ -220,7 +224,7 @@ class InstanceSettingsDialog(DialogBase):
         note = QLabel(
             "服務需為 systemd unit。臨時模式不寫入永久設定；永久模式會寫入 systemd unit "
             "與 drop-in，任何方式啟動都生效。變更服務會重啟該服務。",
-            group,
+            card,
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: gray;")
@@ -235,7 +239,7 @@ class InstanceSettingsDialog(DialogBase):
 
         self._net_enabled.toggled.connect(self._on_network_toggled)
         self._on_network_toggled(initial["enabled"])
-        self._layout.insertWidget(2, group)
+        self._layout.insertWidget(2, card)
 
     def _on_network_toggled(self, checked: bool) -> None:
         for widget in (self._net_scope, self._net_ip, self._net_services):
@@ -265,45 +269,43 @@ class InstanceSettingsDialog(DialogBase):
         self._proxy_host.setText(ip)
 
     def _build_maintenance(self) -> None:
-        group = QGroupBox("進階維護", self)
-        layout = QVBoxLayout(group)
-        layout.setSpacing(10)
+        card, layout = make_card(self, "進階維護")
 
-        self._version_combo = QComboBox(group)
+        self._version_combo = QComboBox(card)
         self._version_combo.addItem("WSL 1", 1)
         self._version_combo.addItem("WSL 2", 2)
         index = self._version_combo.findData(self._distro.version)
         self._version_combo.setCurrentIndex(max(0, index))
         self._version_combo.setFixedWidth(96)
 
-        self._version_btn = QPushButton("套用版本", group)
+        self._version_btn = QPushButton("套用版本", card)
         self._version_btn.setFixedHeight(32)
         self._version_btn.clicked.connect(self._on_apply_version)
         version_row = QHBoxLayout()
-        version_row.addWidget(QLabel("WSL 版本", group))
+        version_row.addWidget(QLabel("WSL 版本", card))
         version_row.addWidget(self._version_combo)
         version_row.addStretch(1)
         version_row.addWidget(self._version_btn)
         layout.addLayout(version_row)
 
-        self._sparse_label = QLabel(self._sparse_text(), group)
+        self._sparse_label = QLabel(self._sparse_text(), card)
         self._sparse_btn = QPushButton(
             "停用 Sparse VHD" if self._sparse_state is True else "啟用 Sparse VHD",
-            group,
+            card,
         )
         self._sparse_btn.setFixedHeight(32)
         self._sparse_btn.clicked.connect(self._on_toggle_sparse)
         sparse_row = QHBoxLayout()
-        sparse_row.addWidget(QLabel("Sparse VHD", group))
+        sparse_row.addWidget(QLabel("Sparse VHD", card))
         sparse_row.addWidget(self._sparse_label, 1)
         sparse_row.addWidget(self._sparse_btn)
         layout.addLayout(sparse_row)
 
-        self._compact_btn = QPushButton("壓縮 VHD（回收未使用空間）", group)
+        self._compact_btn = QPushButton("壓縮 VHD（回收未使用空間）", card)
         self._compact_btn.setFixedHeight(32)
         self._compact_btn.clicked.connect(self._on_compact)
         compact_row = QHBoxLayout()
-        compact_row.addWidget(QLabel("磁碟壓縮", group))
+        compact_row.addWidget(QLabel("磁碟壓縮", card))
         compact_row.addStretch(1)
         compact_row.addWidget(self._compact_btn)
         layout.addLayout(compact_row)
@@ -320,7 +322,7 @@ class InstanceSettingsDialog(DialogBase):
                 button.setEnabled(False)
                 button.setToolTip("僅 WSL 2 支援此操作")
 
-        self._layout.insertWidget(3, group)
+        self._layout.insertWidget(3, card)
 
     def _sparse_text(self) -> str:
         if self._sparse_state is True:

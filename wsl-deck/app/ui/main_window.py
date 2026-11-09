@@ -8,12 +8,12 @@ from datetime import datetime
 from functools import partial
 
 from PySide6.QtCore import QEvent, QSize, QThreadPool, QTimer, Qt
-from PySide6.QtGui import QCloseEvent, QColor, QFont
+from PySide6.QtGui import QCloseEvent, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFrame,
-    QGraphicsDropShadowEffect,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -60,7 +60,11 @@ from app.ui.backup_dialogs import BackupDialog, CloneDialog, DeleteDialog, Resto
 from app.ui.card_wall import CardWall
 from app.ui.cursors import refresh_cursor
 from app.ui.detail_page import DetailPage
-from app.ui.icons import settings_fab_icon
+from app.ui.icons import (
+    add_icon,
+    back_icon,
+    settings_themed_icon,
+)
 from app.ui.instance_settings_dialog import InstanceSettingsDialog
 from app.ui.instance_table import InstanceTable
 from app.ui.progress import OperationDialog
@@ -68,7 +72,7 @@ from app.ui.rule_dialog import RuleDialog
 from app.ui.scan_dialog import ScanDialog
 from app.ui.settings_dialog import SettingsDialog
 from app.ui.snapshot_dialog import SnapshotDialog
-from app.ui.theme import apply_theme
+from app.ui.theme import apply_theme, PRIMARY_COLOR
 from app.ui.tray import TrayController
 from app.ui.view_toggle import ViewToggle
 from app.ui.wizard import NewInstanceWizard
@@ -86,9 +90,100 @@ from app.workspace import ensure_workspace
 
 logger = logging.getLogger(__name__)
 
-SETTINGS_BUTTON_SIZE = 40
-SETTINGS_ICON_SIZE = 28
-SETTINGS_BUTTON_MARGIN = 32
+TOP_BAR_HEIGHT = 56
+BOTTOM_BAR_HEIGHT = 48
+CONTENT_MARGIN = 24
+SIDE_SLOT_WIDTH = 120
+LOG_PANEL_HEIGHT = 150
+
+TOP_BAR_STYLE = """
+QWidget#topBar {
+    background: palette(base);
+    border: none;
+    border-bottom: 1px solid rgba(128, 128, 128, 70);
+}
+QLabel#appTitle {
+    color: palette(windowtext);
+}
+QFrame#topBarDivider {
+    background: rgba(128, 128, 128, 50);
+}
+QPushButton#secondaryAction {
+    background: transparent;
+    color: palette(windowtext);
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    padding: 0 14px;
+}
+QPushButton#secondaryAction:hover {
+    background: palette(midlight);
+}
+QPushButton#secondaryAction:pressed {
+    background: palette(mid);
+}
+QPushButton#secondaryAction:disabled {
+    color: #9aa0a6;
+}
+"""
+
+PRIMARY_ACTION_STYLE = f"""
+QPushButton#primaryAction {{
+    background: {PRIMARY_COLOR};
+    color: #FFFFFF;
+    border: 1px solid {PRIMARY_COLOR};
+    border-radius: 6px;
+    padding: 0 14px;
+}}
+QPushButton#primaryAction:hover {{
+    background: #1F66CC;
+    border-color: #1F66CC;
+}}
+QPushButton#primaryAction:pressed {{
+    background: #1A5BB3;
+    border-color: #1A5BB3;
+}}
+QPushButton#primaryAction:disabled {{
+    background: #A9C7F5;
+    border-color: #A9C7F5;
+    color: #FFFFFF;
+}}
+"""
+
+BOTTOM_BAR_STYLE = """
+QWidget#bottomBar {
+    background: palette(base);
+    border: none;
+    border-top: 1px solid rgba(128, 128, 128, 70);
+}
+QToolButton#logToggle {
+    border: none;
+    background: transparent;
+    color: palette(windowtext);
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+QToolButton#logToggle:hover {
+    background: palette(midlight);
+}
+QToolButton#bottomSettings {
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+}
+QToolButton#bottomSettings:hover {
+    background: palette(midlight);
+}
+"""
+
+LOG_PANEL_STYLE = """
+QPlainTextEdit#logView {
+    background: palette(base);
+    border: none;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    padding: 16px;
+}
+"""
 
 
 class MainWindow(QMainWindow):
@@ -114,6 +209,7 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(app_icon())
         self.resize(1000, 680)
 
+        self._top_bar = self._build_top_bar()
         self._stack = QStackedWidget(self)
         self._main_page = self._build_main_page()
         self._detail_page = DetailPage(self)
@@ -124,42 +220,11 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        layout.addWidget(self._top_bar)
         layout.addWidget(self._stack, 1)
-        layout.addWidget(self._build_log_drawer())
+        layout.addWidget(self._build_log_panel())
+        layout.addWidget(self._build_bottom_bar())
         self.setCentralWidget(central)
-
-        self._status_label = QLabel("載入中…", self)
-        self.statusBar().addWidget(self._status_label, 1)
-        self._settings_btn = QToolButton(self)
-        self._settings_btn.setObjectName("settingsFab")
-        self._settings_btn.setToolTip("設定")
-        self._settings_btn.setFixedSize(SETTINGS_BUTTON_SIZE, SETTINGS_BUTTON_SIZE)
-        self._settings_btn.setIcon(settings_fab_icon())
-        self._settings_btn.setIconSize(QSize(SETTINGS_ICON_SIZE, SETTINGS_ICON_SIZE))
-        self._settings_btn.setStyleSheet(
-            f"""
-            QToolButton#settingsFab {{
-                background: palette(button);
-                border: 1px solid palette(mid);
-                border-radius: {SETTINGS_BUTTON_SIZE // 2}px;
-            }}
-            QToolButton#settingsFab:hover {{
-                background: palette(midlight);
-                border-color: #2D7FF9;
-            }}
-            QToolButton#settingsFab:pressed {{
-                background: palette(mid);
-                border-color: #1F66CC;
-            }}
-            """
-        )
-        settings_shadow = QGraphicsDropShadowEffect(self._settings_btn)
-        settings_shadow.setBlurRadius(6)
-        settings_shadow.setOffset(0, 2)
-        settings_shadow.setColor(QColor(0, 0, 0, 60))
-        self._settings_btn.setGraphicsEffect(settings_shadow)
-        self._settings_btn.clicked.connect(self._open_settings)
-        refresh_cursor(self._settings_btn)
 
         self._tray = TrayController(self)
         if self._tray.available:
@@ -177,46 +242,135 @@ class MainWindow(QMainWindow):
         self._timer.start(interval)
 
         self._watch_color_scheme()
-        self._position_settings_btn()
         QTimer.singleShot(0, self.refresh)
 
-    def _build_main_page(self) -> QWidget:
-        page = QWidget(self)
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(16, 14, 16, 10)
-        layout.setSpacing(10)
+    def _build_top_bar(self) -> QWidget:
+        bar = QWidget(self)
+        bar.setObjectName("topBar")
+        bar.setFixedHeight(TOP_BAR_HEIGHT)
+        bar.setStyleSheet(TOP_BAR_STYLE + PRIMARY_ACTION_STYLE)
 
-        top = QHBoxLayout()
-        title = QLabel("WSL Deck", page)
+        outer = QVBoxLayout(bar)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self._top_stack = QStackedWidget(bar)
+        self._top_stack.addWidget(self._build_home_bar())
+        self._top_stack.addWidget(self._build_detail_bar())
+        outer.addWidget(self._top_stack)
+        return bar
+
+    def _build_home_bar(self) -> QWidget:
+        row = QWidget(self)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(CONTENT_MARGIN, 8, CONTENT_MARGIN, 8)
+        layout.setSpacing(8)
+
+        title = QLabel("WSL Deck", row)
+        title.setObjectName("appTitle")
         title_font = QFont()
         title_font.setPointSize(18)
         title_font.setBold(True)
         title.setFont(title_font)
-        top.addWidget(title)
-        top.addStretch(1)
+        layout.addWidget(title)
+        layout.addStretch(1)
 
-        self._new_btn = QPushButton("+ 新增 Instance", page)
-        self._new_btn.setMinimumHeight(32)
+        self._new_btn = QPushButton("新增 Instance", row)
+        self._new_btn.setObjectName("primaryAction")
+        self._new_btn.setIcon(add_icon())
+        self._new_btn.setIconSize(QSize(14, 14))
+        self._new_btn.setFixedHeight(32)
         refresh_cursor(self._new_btn)
         self._new_btn.clicked.connect(self._new_instance)
-        top.addWidget(self._new_btn)
+        layout.addWidget(self._new_btn)
 
-        self._shutdown_btn = QPushButton("全部關機", page)
+        self._shutdown_btn = QPushButton("全部關機", row)
+        self._shutdown_btn.setObjectName("secondaryAction")
         self._shutdown_btn.setEnabled(False)
-        self._shutdown_btn.setMinimumHeight(32)
+        self._shutdown_btn.setFixedHeight(32)
         refresh_cursor(self._shutdown_btn)
         self._shutdown_btn.clicked.connect(self._shutdown_all)
-        top.addWidget(self._shutdown_btn)
+        layout.addWidget(self._shutdown_btn)
 
-        layout.addLayout(top)
+        layout.addSpacing(2)
+        layout.addWidget(self._build_bar_divider(row), 0, Qt.AlignVCenter)
+        layout.addSpacing(2)
 
-        toggle_row = QHBoxLayout()
-        toggle_row.setContentsMargins(0, 0, 0, 0)
-        toggle_row.addStretch(1)
-        self.view_toggle = ViewToggle(page)
+        self.view_toggle = ViewToggle(row)
         self.view_toggle.mode_changed.connect(self._on_view_mode)
-        toggle_row.addWidget(self.view_toggle)
-        layout.addLayout(toggle_row)
+        layout.addWidget(self.view_toggle)
+        return row
+
+    def _build_bar_divider(self, parent: QWidget) -> QFrame:
+        divider = QFrame(parent)
+        divider.setObjectName("topBarDivider")
+        divider.setFixedSize(1, 32)
+        return divider
+
+    def _build_detail_bar(self) -> QWidget:
+        row = QWidget(self)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(CONTENT_MARGIN, 8, CONTENT_MARGIN, 8)
+        layout.setSpacing(8)
+
+        self._back_btn = QPushButton("返回", row)
+        self._back_btn.setObjectName("secondaryAction")
+        self._back_btn.setIcon(back_icon())
+        self._back_btn.setIconSize(QSize(16, 16))
+        self._back_btn.setFixedHeight(32)
+        self._back_btn.setMinimumWidth(72)
+        refresh_cursor(self._back_btn)
+        self._back_btn.clicked.connect(self._show_main)
+        layout.addWidget(self._back_btn)
+        layout.addStretch(1)
+        return row
+
+    def _build_bottom_bar(self) -> QWidget:
+        bar = QWidget(self)
+        bar.setObjectName("bottomBar")
+        bar.setFixedHeight(BOTTOM_BAR_HEIGHT)
+        bar.setStyleSheet(BOTTOM_BAR_STYLE)
+
+        grid = QGridLayout(bar)
+        grid.setContentsMargins(CONTENT_MARGIN, 6, CONTENT_MARGIN, 6)
+        grid.setHorizontalSpacing(8)
+        grid.setColumnMinimumWidth(0, SIDE_SLOT_WIDTH)
+        grid.setColumnMinimumWidth(2, SIDE_SLOT_WIDTH)
+        grid.setColumnStretch(1, 1)
+
+        self._log_toggle = QToolButton(bar)
+        self._log_toggle.setObjectName("logToggle")
+        self._log_toggle.setText("日誌")
+        self._log_toggle.setCheckable(True)
+        self._log_toggle.setChecked(False)
+        self._log_toggle.setAutoRaise(True)
+        self._log_toggle.setArrowType(Qt.RightArrow)
+        self._log_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._log_toggle.setFixedHeight(30)
+        refresh_cursor(self._log_toggle)
+        self._log_toggle.toggled.connect(self._on_log_toggled)
+        grid.addWidget(self._log_toggle, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+
+        self._status_label = QLabel("載入中…", bar)
+        self._status_label.setAlignment(Qt.AlignCenter)
+        self._status_label.setStyleSheet("color: #7f8c8d;")
+        grid.addWidget(self._status_label, 0, 1)
+
+        self._settings_btn = QToolButton(bar)
+        self._settings_btn.setObjectName("bottomSettings")
+        self._settings_btn.setToolTip("設定")
+        self._settings_btn.setFixedSize(32, 32)
+        self._settings_btn.setIcon(settings_themed_icon())
+        self._settings_btn.setIconSize(QSize(20, 20))
+        self._settings_btn.clicked.connect(self._open_settings)
+        refresh_cursor(self._settings_btn)
+        grid.addWidget(self._settings_btn, 0, 2, Qt.AlignRight | Qt.AlignVCenter)
+        return bar
+
+    def _build_main_page(self) -> QWidget:
+        page = QWidget(self)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 12, 0, 12)
+        layout.setSpacing(0)
 
         self._wall_stack = QStackedWidget(page)
 
@@ -265,30 +419,18 @@ class MainWindow(QMainWindow):
         self.view_toggle.set_mode(mode)
         self._wall_stack.setCurrentIndex(0 if mode == "card" else 1)
 
-    def _build_log_drawer(self) -> QWidget:
+    def _build_log_panel(self) -> QWidget:
         container = QWidget(self)
+        container.setStyleSheet(LOG_PANEL_STYLE)
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(16, 0, 16, 8)
-        layout.setSpacing(4)
-
-        toggle_row = QHBoxLayout()
-        self._log_toggle = QToolButton(container)
-        self._log_toggle.setText("日誌")
-        self._log_toggle.setCheckable(True)
-        self._log_toggle.setChecked(False)
-        self._log_toggle.setAutoRaise(True)
-        self._log_toggle.setArrowType(Qt.RightArrow)
-        self._log_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        refresh_cursor(self._log_toggle)
-        self._log_toggle.toggled.connect(self._on_log_toggled)
-        toggle_row.addWidget(self._log_toggle)
-        toggle_row.addStretch(1)
-        layout.addLayout(toggle_row)
+        layout.setContentsMargins(CONTENT_MARGIN, 8, CONTENT_MARGIN, 0)
+        layout.setSpacing(0)
 
         self._log_view = QPlainTextEdit(container)
+        self._log_view.setObjectName("logView")
         self._log_view.setReadOnly(True)
         self._log_view.setMaximumBlockCount(2000)
-        self._log_view.setFixedHeight(150)
+        self._log_view.setFixedHeight(LOG_PANEL_HEIGHT)
         self._log_view.setVisible(False)
         log_font = QFont("Consolas")
         log_font.setStyleHint(QFont.Monospace)
@@ -311,7 +453,6 @@ class MainWindow(QMainWindow):
         self.instance_table.linux_files_requested.connect(self._open_linux_files)
         self.instance_table.install_dir_requested.connect(self._open_install_dir)
 
-        self._detail_page.back_requested.connect(self._show_main)
         self._detail_page.start_requested.connect(self._start)
         self._detail_page.stop_requested.connect(self._stop)
         self._detail_page.terminal_requested.connect(self._open_terminal)
@@ -323,19 +464,12 @@ class MainWindow(QMainWindow):
         self._detail_page.snapshot_requested.connect(self._snapshots)
         self._detail_page.clone_requested.connect(self._clone)
         self._detail_page.delete_requested.connect(self._delete)
+        self._detail_page.settings_requested.connect(self._open_instance_settings)
         self._detail_page.network_add_requested.connect(self._network_add)
         self._detail_page.network_edit_requested.connect(self._network_edit)
         self._detail_page.network_delete_requested.connect(self._network_delete)
         self._detail_page.network_apply_requested.connect(self._network_apply)
         self._detail_page.network_scan_requested.connect(self._network_scan)
-        self._detail_page.settings_requested.connect(self._open_instance_settings)
-
-    def _position_settings_btn(self) -> None:
-        self._settings_btn.move(
-            max(0, self.width() - SETTINGS_BUTTON_SIZE - SETTINGS_BUTTON_MARGIN),
-            max(0, self.height() - SETTINGS_BUTTON_SIZE - SETTINGS_BUTTON_MARGIN),
-        )
-        self._settings_btn.raise_()
 
     def refresh(self) -> None:
         if self._refresh_busy:
@@ -573,6 +707,8 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             apply_theme(app, str(self.config.get("theme", "system")))
+            self._back_btn.setIcon(back_icon())
+            self._settings_btn.setIcon(settings_themed_icon())
         interval = max(3, int(self.config.get("poll_interval", 10))) * 1000
         self._timer.start(interval)
         logger.info("設定已更新")
@@ -591,6 +727,8 @@ class MainWindow(QMainWindow):
             app = QApplication.instance()
             if app is not None:
                 apply_theme(app, "system")
+                self._back_btn.setIcon(back_icon())
+                self._settings_btn.setIcon(settings_themed_icon())
 
     def _run_task(self, fn, on_done, on_error=None, *args, **kwargs) -> None:
         worker = TaskWorker(fn, *args, **kwargs)
@@ -617,6 +755,7 @@ class MainWindow(QMainWindow):
     def _show_detail(self, distro: Distro) -> None:
         self._current = distro
         self._detail_page.set_distro(distro, self._is_system(distro.name))
+        self._top_stack.setCurrentIndex(1)
         self._stack.setCurrentWidget(self._detail_page)
         if distro.running:
             self._load_ip(distro.name)
@@ -625,6 +764,7 @@ class MainWindow(QMainWindow):
     def _show_main(self) -> None:
         self._current = None
         self._stack.setCurrentWidget(self._main_page)
+        self._top_stack.setCurrentIndex(0)
 
     def _load_ip(self, name: str) -> None:
         self._run_task(
@@ -1477,7 +1617,3 @@ class MainWindow(QMainWindow):
         super().changeEvent(event)
         if event.type() == QEvent.ActivationChange and self.isActiveWindow():
             self.refresh()
-
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        self._position_settings_btn()

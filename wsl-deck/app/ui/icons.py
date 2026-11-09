@@ -17,11 +17,14 @@ from PySide6.QtGui import (
     QPixmap,
     QPolygonF,
 )
+from PySide6.QtSvg import QSvgRenderer
+
+from app.ui.theme import PRIMARY_COLOR
 
 ICON_SIZE = 22
 ACTIVE_ICON_COLOR = "#ffffff"
 INACTIVE_ICON_COLOR = "#5f6368"
-SETTINGS_ICON_COLOR = "#2D7FF9"
+SETTINGS_ICON_COLOR = PRIMARY_COLOR
 
 _ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 
@@ -35,6 +38,92 @@ def _svg_icon(filename: str) -> QIcon | None:
     for size in (16, 24, 32, 48, 64):
         icon.addFile(str(path), QSize(size, size))
     return icon
+
+
+def _muted_color() -> str:
+    """依當前主題決定中性圖標色；沒有 QApplication 時用淺色主題色。"""
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is not None:
+        window_color = app.palette().window().color()
+        if window_color.lightness() < 128:
+            return "#c9ced6"
+    return INACTIVE_ICON_COLOR
+
+
+def _svg_tinted_pixmap(filename: str, size: int, color: str) -> QPixmap | None:
+    """渲染 stroke="currentColor" 的 SVG 並重新上色（Qt 不解析 currentColor）。"""
+    path = _ASSETS_DIR / filename
+    if not path.is_file():
+        return None
+    renderer = QSvgRenderer(str(path))
+    if not renderer.isValid():
+        return None
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(pixmap.rect(), QColor(color))
+    painter.end()
+    return pixmap
+
+
+def _svg_tinted_icon(filename: str, color: str) -> QIcon | None:
+    """逐尺寸產生上色後的 pixmap，組成 QIcon。"""
+    icon = QIcon()
+    for size in (16, 24, 32, 48, 64):
+        pixmap = _svg_tinted_pixmap(filename, size, color)
+        if pixmap is None:
+            return None
+        icon.addPixmap(pixmap)
+    return icon
+
+
+def back_icon() -> QIcon:
+    """返回箭頭（ic_back.svg），隨主題取中性色；缺失回傳空 icon。"""
+    return _svg_tinted_icon("ic_back.svg", _muted_color()) or QIcon()
+
+
+def settings_themed_icon() -> QIcon:
+    """齒輪（ic_settings.svg），隨主題近黑/近白；缺失回傳空 icon。"""
+    return _svg_tinted_icon("ic_settings.svg", _muted_color()) or QIcon()
+
+
+def add_icon() -> QIcon:
+    """新增（ic_add.svg），白色，用於主色底按鈕；缺失回傳空 icon。"""
+    return _svg_tinted_icon("ic_add.svg", "#FFFFFF") or QIcon()
+
+
+def backup_icon() -> QIcon:
+    """備份（ic_backup.svg），隨主題中性色；缺失回傳空 icon。"""
+    return _svg_tinted_icon("ic_backup.svg", _muted_color()) or QIcon()
+
+
+def restore_icon() -> QIcon:
+    """還原（ic_restore.svg），隨主題中性色；缺失回傳空 icon。"""
+    return _svg_tinted_icon("ic_restore.svg", _muted_color()) or QIcon()
+
+
+def snapshot_icon() -> QIcon:
+    """快照（ic_snapshot.svg），隨主題中性色；缺失回傳空 icon。"""
+    return _svg_tinted_icon("ic_snapshot.svg", _muted_color()) or QIcon()
+
+
+def copy_icon() -> QIcon:
+    """複製（ic_copy.svg），隨主題中性色；缺失回傳空 icon。"""
+    return _svg_tinted_icon("ic_copy.svg", _muted_color()) or QIcon()
+
+
+def delete_icon() -> QIcon:
+    """刪除（ic_delete.svg），紅色警示；缺失回傳空 icon。"""
+    return _svg_tinted_icon("ic_delete.svg", "#e74c3c") or QIcon()
+
+
+def heart_outline_icon() -> QIcon:
+    """普通 instance：空心愛心（灰）；缺失回傳空 icon。"""
+    return _svg_tinted_icon("ic_heart_outline.svg", _muted_color()) or QIcon()
 
 
 def power_start_icon() -> QIcon:
@@ -254,6 +343,9 @@ def settings_pixmap(
 
 
 def settings_icon() -> QIcon:
+    """線性齒輪（ic_settings.svg，主色），缺失回退 QPainter 繪製。"""
+    if icon := _svg_tinted_icon("ic_settings.svg", SETTINGS_ICON_COLOR):
+        return icon
     icon = QIcon()
     for size in (16, 24, 32, 48, 64, 128):
         icon.addPixmap(settings_pixmap(size))

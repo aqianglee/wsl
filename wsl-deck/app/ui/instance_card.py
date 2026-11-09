@@ -25,6 +25,7 @@ from app.ui.cursors import refresh_cursor
 from app.ui.icons import (
     forbidden_icon,
     heart_icon,
+    heart_outline_icon,
     install_dir_icon,
     linux_archive_icon,
     power_start_icon,
@@ -251,8 +252,15 @@ class InstanceCard(QFrame):
         name_font.setPointSize(18 if len(distro.name) <= 10 else 14)
         name_font.setBold(True)
         self._name.setFont(name_font)
-        self._star.setVisible(distro.is_default)
+        self._star.setVisible(not is_system)
         self._system_icon.setVisible(is_system)
+        if not is_system:
+            if distro.is_default:
+                self._star.setPixmap(heart_icon().pixmap(QSize(18, 18)))
+                self._star.setToolTip("預設 instance")
+            else:
+                self._star.setPixmap(heart_outline_icon().pixmap(QSize(18, 18)))
+                self._star.setToolTip("普通 instance")
 
         if distro.ip:
             self._ip_label.setText(distro.ip)

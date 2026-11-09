@@ -4,7 +4,7 @@ a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=[],
-    datas=[("assets/wsl-deck-icon.ico", "assets")],
+    datas=[("assets", "assets")],
     hiddenimports=["app.admin"],
     hookspath=[],
     runtime_hooks=[],

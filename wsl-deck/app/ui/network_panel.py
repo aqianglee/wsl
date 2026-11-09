@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QGroupBox,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -25,8 +25,23 @@ STATUS_COLORS = {
     "已停用": "#7f8c8d",
 }
 
+CARD_STYLE = """
+QFrame#sectionCard {
+    background: palette(base);
+    border: 1px solid rgba(128, 128, 128, 30);
+    border-radius: 10px;
+}
+"""
 
-class NetworkPanel(QGroupBox):
+
+def _title_font() -> QFont:
+    font = QFont()
+    font.setPointSize(12)
+    font.setBold(True)
+    return font
+
+
+class NetworkPanel(QFrame):
     add_requested = Signal()
     edit_requested = Signal(int)
     delete_requested = Signal(int)
@@ -34,14 +49,21 @@ class NetworkPanel(QGroupBox):
     scan_requested = Signal()
 
     def __init__(self, parent=None):
-        super().__init__("網路規則", parent)
+        super().__init__(parent)
+        self.setObjectName("sectionCard")
+        self.setStyleSheet(CARD_STYLE)
         self._name = ""
         self._system = False
         self._running = False
         self._rules: list[dict] = []
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(8)
+
+        title = QLabel("網路規則", self)
+        title.setFont(_title_font())
+        layout.addWidget(title)
 
         self._table = QTableWidget(0, 5, self)
         self._table.setHorizontalHeaderLabels(

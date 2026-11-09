@@ -25,7 +25,7 @@ class CardWall(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._layout = QGridLayout(self)
-        self._layout.setContentsMargins(12, 12, 12, 12)
+        self._layout.setContentsMargins(24, 12, 24, 12)
         self._layout.setSpacing(16)
         self._cards: dict[str, InstanceCard] = {}
         self._order: list[str] = []

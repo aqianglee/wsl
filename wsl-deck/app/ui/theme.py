@@ -8,6 +8,9 @@ from PySide6.QtWidgets import QApplication
 
 THEME_MODES = ("system", "dark", "light")
 
+# 主色：取自 App 圖標色，全城共用（按鈕、選中狀態、設定齒輪）。
+PRIMARY_COLOR = "#2D7FF9"
+
 
 def resolve_mode(mode: str, scheme: Qt.ColorScheme) -> str:
     if mode == "dark":
@@ -23,7 +26,7 @@ def build_dark_palette() -> QPalette:
     base = QColor("#1b1d20")
     text = QColor("#e6e6e6")
     button = QColor("#2b2e31")
-    highlight = QColor("#2d7ff9")
+    highlight = QColor(PRIMARY_COLOR)
     palette.setColor(QPalette.Window, window)
     palette.setColor(QPalette.WindowText, text)
     palette.setColor(QPalette.Base, base)

@@ -5,15 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QSize, QTimer, Qt, Signal
-from PySide6.QtGui import QFont, QIcon, QMouseEvent, QPixmap
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QStyle,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -21,12 +21,13 @@ from PySide6.QtWidgets import (
 
 from app.ui.cursors import refresh_cursor
 from app.ui.icons import (
-    heart_pixmap,
+    forbidden_icon,
+    heart_icon,
+    heart_outline_icon,
     install_dir_icon,
     linux_archive_icon,
     power_start_icon,
     power_stop_icon,
-    prohibition_pixmap,
     terminal_icon,
 )
 from app.ui.instance_card import (
@@ -34,28 +35,38 @@ from app.ui.instance_card import (
     ICON_SIZE,
     SYSTEM_REASON,
 )
+from app.ui.theme import PRIMARY_COLOR
 from app.wsl import Distro
 
 ROW_HEIGHT = 48
-HEADER_HEIGHT = 32
+HEADER_HEIGHT = ROW_HEIGHT
 ICON_COLUMN_WIDTH = 40
 IP_COLUMN_WIDTH = 150
 SIZE_COLUMN_WIDTH = 100
 COLUMN_PADDING = 12
-BUTTONS_WIDTH = 348
+BUTTONS_WIDTH = 366
 OPS_COLUMN_WIDTH = BUTTONS_WIDTH + COLUMN_PADDING * 2
-TABLE_MARGIN = 12
+OPS_DIVIDER_HEIGHT = 30
+TABLE_SHADOW_PAD_X = 24
+TABLE_SHADOW_PAD_Y = 12
 
 ROW_STYLE = f"""
+QFrame#tableCard {{
+    background: palette(base);
+    border: 1px solid rgba(128, 128, 128, 30);
+    border-radius: 10px;
+}}
 QFrame#instanceRow {{
     background: transparent;
     border-bottom: 1px solid rgba(128, 128, 128, 45);
 }}
-QFrame#instanceRow:hover {{
-    background: palette(midlight);
+QFrame#opsDivider {{
+    background: rgba(128, 128, 128, 32);
 }}
-QWidget#tableHeader {{
-    background: transparent;
+QFrame#tableHeader {{
+    background: palette(window);
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
 }}
 QFrame#headerLine {{
     background: rgba(128, 128, 128, 65);
@@ -64,7 +75,7 @@ QFrame#columnDivider {{
     background: rgba(128, 128, 128, 56);
 }}
 QLabel#tableHeaderText {{
-    color: #7f8c8d;
+    color: palette(windowtext);
 }}
 QToolButton#rowIcon {{
     border: none;
@@ -87,6 +98,25 @@ QPushButton#rowAction:hover {{
     background: palette(midlight);
     border-color: #4a90e2;
 }}
+QPushButton#detailLink {{
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: {PRIMARY_COLOR};
+    padding: 4px 10px;
+}}
+QPushButton#detailLink:hover {{
+    background: palette(button);
+    border-color: palette(mid);
+}}
+QPushButton#detailLink:pressed {{
+    background: palette(midlight);
+}}
+QPushButton#detailLink:disabled {{
+    color: #9aa0a6;
+    background: transparent;
+    border-color: transparent;
+}}
 QToolButton#rowIcon:disabled, QPushButton#rowAction:disabled {{
     color: #9aa0a6;
     background: transparent;
@@ -97,7 +127,7 @@ QToolButton#rowIcon:disabled, QPushButton#rowAction:disabled {{
 
 def _header_font() -> QFont:
     font = QFont()
-    font.setPointSize(10)
+    font.setPointSize(11)
     font.setBold(True)
     return font
 
@@ -107,6 +137,13 @@ def _column_divider(parent: QWidget) -> QFrame:
     divider.setObjectName("columnDivider")
     divider.setFixedWidth(1)
     divider.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+    return divider
+
+
+def _ops_divider(parent: QWidget) -> QFrame:
+    divider = QFrame(parent)
+    divider.setObjectName("opsDivider")
+    divider.setFixedSize(1, OPS_DIVIDER_HEIGHT)
     return divider
 
 
@@ -125,7 +162,6 @@ class InstanceRow(QFrame):
         self.setObjectName("instanceRow")
         self.setAttribute(Qt.WA_Hover, True)
         self.setFixedHeight(ROW_HEIGHT)
-        self.setCursor(Qt.PointingHandCursor)
         self._build()
         self.update_distro(distro, is_system)
 
@@ -133,8 +169,6 @@ class InstanceRow(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-
-        layout.addWidget(_column_divider(self))
 
         self._icon = QLabel(self)
         self._icon.setFixedSize(ICON_COLUMN_WIDTH, ROW_HEIGHT)
@@ -176,10 +210,11 @@ class InstanceRow(QFrame):
         ops.setSpacing(8)
 
         self._detail_btn = QPushButton("詳情", self)
-        self._detail_btn.setObjectName("rowAction")
+        self._detail_btn.setObjectName("detailLink")
         self._detail_btn.setFixedSize(64, ICON_BUTTON_SIZE)
         self._detail_btn.clicked.connect(self._emit_open)
         ops.addWidget(self._detail_btn)
+        ops.addWidget(_ops_divider(self), 0, Qt.AlignVCenter)
 
         self._power_btn = QToolButton(self)
         self._power_btn.setObjectName("rowIcon")
@@ -198,6 +233,7 @@ class InstanceRow(QFrame):
             lambda: self.terminal_requested.emit(self._distro.name)
         )
         ops.addWidget(self._terminal_btn)
+        ops.addWidget(_ops_divider(self), 0, Qt.AlignVCenter)
 
         self._linux_btn = QPushButton("Linux 檔案", self)
         self._linux_btn.setObjectName("rowAction")
@@ -223,7 +259,6 @@ class InstanceRow(QFrame):
         holder.setFixedWidth(OPS_COLUMN_WIDTH)
         holder.setLayout(ops)
         layout.addWidget(holder, 0, Qt.AlignVCenter)
-        layout.addWidget(_column_divider(self))
         self._buttons = (
             self._detail_btn,
             self._power_btn,
@@ -247,14 +282,14 @@ class InstanceRow(QFrame):
         self._size.setText(f"{distro.size_gb:.1f} GB")
 
         if is_system:
-            self._icon.setPixmap(prohibition_pixmap())
+            self._icon.setPixmap(forbidden_icon().pixmap(QSize(18, 18)))
             self._icon.setToolTip(SYSTEM_REASON)
         elif distro.is_default:
-            self._icon.setPixmap(heart_pixmap())
+            self._icon.setPixmap(heart_icon().pixmap(QSize(18, 18)))
             self._icon.setToolTip("預設 instance")
         else:
-            self._icon.setPixmap(QPixmap())
-            self._icon.setToolTip("")
+            self._icon.setPixmap(heart_outline_icon().pixmap(QSize(18, 18)))
+            self._icon.setToolTip("普通 instance")
 
         if distro.running:
             self._power_btn.setIcon(power_stop_icon())
@@ -291,11 +326,6 @@ class InstanceRow(QFrame):
         else:
             self.start_requested.emit(self._distro.name)
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.button() == Qt.LeftButton:
-            self.open_requested.emit(self._distro)
-        super().mousePressEvent(event)
-
 
 class InstanceTable(QWidget):
     open_requested = Signal(object)
@@ -314,22 +344,37 @@ class InstanceTable(QWidget):
 
     def _build(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(
+            TABLE_SHADOW_PAD_X,
+            TABLE_SHADOW_PAD_Y,
+            TABLE_SHADOW_PAD_X,
+            TABLE_SHADOW_PAD_Y,
+        )
         layout.setSpacing(0)
 
-        header = QWidget(self)
+        self._card = QFrame(self)
+        self._card.setObjectName("tableCard")
+        card_layout = QVBoxLayout(self._card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(0)
+
+        shadow = QGraphicsDropShadowEffect(self._card)
+        shadow.setBlurRadius(24)
+        shadow.setOffset(0, 4)
+        shadow.setColor(QColor(0, 0, 0, 45))
+        self._card.setGraphicsEffect(shadow)
+
+        header = QFrame(self._card)
         header.setObjectName("tableHeader")
         header.setFixedHeight(HEADER_HEIGHT)
         self._header_outer = QVBoxLayout(header)
-        self._header_outer.setContentsMargins(TABLE_MARGIN, 0, TABLE_MARGIN, 0)
+        self._header_outer.setContentsMargins(0, 0, 0, 0)
         self._header_outer.setSpacing(0)
 
         header_row = QWidget(header)
         self._header_layout = QHBoxLayout(header_row)
         self._header_layout.setContentsMargins(0, 0, 0, 0)
         self._header_layout.setSpacing(0)
-
-        self._header_layout.addWidget(_column_divider(header_row))
 
         spacer = QLabel(header_row)
         spacer.setFixedWidth(ICON_COLUMN_WIDTH)
@@ -365,23 +410,20 @@ class InstanceTable(QWidget):
         ops_title.setAlignment(Qt.AlignCenter)
         ops_title.setFixedWidth(OPS_COLUMN_WIDTH)
         self._header_layout.addWidget(ops_title)
-        self._header_layout.addWidget(_column_divider(header_row))
 
-        header_top = QFrame(header)
-        header_top.setObjectName("headerLine")
-        header_top.setFixedHeight(1)
-        self._header_outer.addWidget(header_top)
         self._header_outer.addWidget(header_row, 1)
+
         header_line = QFrame(header)
         header_line.setObjectName("headerLine")
         header_line.setFixedHeight(1)
         self._header_outer.addWidget(header_line)
-        layout.addWidget(header)
+        card_layout.addWidget(header)
 
-        self._scroll = QScrollArea(self)
+        self._scroll = QScrollArea(self._card)
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.viewport().setAutoFillBackground(False)
         self._scroll.verticalScrollBar().rangeChanged.connect(
             self._schedule_header_margin
         )
@@ -389,11 +431,14 @@ class InstanceTable(QWidget):
 
         self._host = QWidget(self._scroll)
         self._rows_layout = QVBoxLayout(self._host)
-        self._rows_layout.setContentsMargins(TABLE_MARGIN, 0, TABLE_MARGIN, 0)
+        self._rows_layout.setContentsMargins(0, 0, 0, 0)
         self._rows_layout.setSpacing(0)
         self._rows_layout.addStretch(1)
         self._scroll.setWidget(self._host)
-        layout.addWidget(self._scroll, 1)
+        self._host.setAutoFillBackground(False)
+        card_layout.addWidget(self._scroll, 1)
+
+        layout.addWidget(self._card, 1)
 
     def eventFilter(self, obj, event) -> bool:
         if obj is self._scroll.verticalScrollBar() and event.type() in (
@@ -409,9 +454,7 @@ class InstanceTable(QWidget):
     def _apply_header_margin(self) -> None:
         bar = self._scroll.verticalScrollBar()
         gutter = bar.width() if bar.isVisible() else 0
-        self._header_outer.setContentsMargins(
-            TABLE_MARGIN, 0, TABLE_MARGIN + gutter, 0
-        )
+        self._header_outer.setContentsMargins(0, 0, gutter, 0)
 
     def set_distros(
         self,

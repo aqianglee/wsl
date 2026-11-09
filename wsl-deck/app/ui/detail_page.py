@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -15,13 +15,78 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.cursors import refresh_cursor
-from app.ui.icons import settings_icon
+from app.ui.icons import (
+    backup_icon,
+    copy_icon,
+    delete_icon,
+    forbidden_icon,
+    heart_icon,
+    heart_outline_icon,
+    install_dir_icon,
+    linux_archive_icon,
+    power_start_icon,
+    power_stop_icon,
+    restore_icon,
+    settings_themed_icon,
+    snapshot_icon,
+    terminal_icon,
+)
+from app.ui.instance_card import SYSTEM_REASON
 from app.ui.network_panel import NetworkPanel
 from app.wsl import Distro
 
+CARD_STYLE = """
+QFrame#sectionCard {
+    background: palette(base);
+    border: 1px solid rgba(128, 128, 128, 30);
+    border-radius: 10px;
+}
+QFrame#sectionDivider {
+    background: rgba(128, 128, 128, 45);
+}
+QFrame#opsDivider {
+    background: rgba(128, 128, 128, 32);
+}
+"""
+
+ICON_SIZE = 16
+BUTTON_HEIGHT = 32
+OPS_DIVIDER_HEIGHT = 22
+
+
+def _title_font() -> QFont:
+    font = QFont()
+    font.setPointSize(12)
+    font.setBold(True)
+    return font
+
+
+def _spaced_icon(icon: QIcon, pad: int = 4) -> QIcon:
+    """在圖標右側補透明像素，加大與文字之間的視覺間距。"""
+    source = icon.pixmap(QSize(ICON_SIZE, ICON_SIZE))
+    canvas = QPixmap(ICON_SIZE + pad, ICON_SIZE)
+    canvas.fill(Qt.transparent)
+    painter = QPainter(canvas)
+    painter.drawPixmap(0, 0, source)
+    painter.end()
+    return QIcon(canvas)
+
+
+def _section_divider(parent: QWidget) -> QFrame:
+    divider = QFrame(parent)
+    divider.setObjectName("sectionDivider")
+    divider.setFixedHeight(1)
+    return divider
+
+
+def _ops_divider(parent: QWidget) -> QFrame:
+    divider = QFrame(parent)
+    divider.setObjectName("opsDivider")
+    divider.setFixedSize(1, OPS_DIVIDER_HEIGHT)
+    return divider
+
 
 class DetailPage(QWidget):
-    back_requested = Signal()
     start_requested = Signal(str)
     stop_requested = Signal(str)
     terminal_requested = Signal(str)
@@ -33,12 +98,12 @@ class DetailPage(QWidget):
     snapshot_requested = Signal(str)
     clone_requested = Signal(str)
     delete_requested = Signal(str)
+    settings_requested = Signal(str)
     network_add_requested = Signal()
     network_edit_requested = Signal(int)
     network_delete_requested = Signal(int)
     network_apply_requested = Signal()
     network_scan_requested = Signal()
-    settings_requested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -48,49 +113,29 @@ class DetailPage(QWidget):
 
     def _build(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setContentsMargins(24, 12, 24, 16)
         layout.setSpacing(12)
 
-        top = QHBoxLayout()
-        back = QPushButton("← 返回", self)
-        back.setFixedHeight(32)
-        back.setMinimumWidth(88)
-        back.clicked.connect(self.back_requested)
-        refresh_cursor(back)
-        top.addWidget(back)
-
-        self._title = QLabel(self)
-        title_font = QFont()
-        title_font.setPointSize(16)
-        title_font.setBold(True)
-        self._title.setFont(title_font)
-        top.addWidget(self._title)
-
-        self._system_badge = QLabel("系統 instance", self)
-        self._system_badge.setStyleSheet(
-            "color: #7f8c8d; border: 1px solid #bdc3c7; border-radius: 4px; padding: 2px 6px;"
-        )
-        top.addWidget(self._system_badge)
-        top.addStretch(1)
-
-        self._settings_btn = QPushButton("設定", self)
-        self._settings_btn.setIcon(settings_icon())
-        self._settings_btn.setIconSize(QSize(16, 16))
-        self._settings_btn.setFixedHeight(32)
-        self._settings_btn.setMinimumWidth(96)
-        self._settings_btn.setToolTip("Instance 設定")
-        self._settings_btn.clicked.connect(self._on_settings)
-        refresh_cursor(self._settings_btn)
-        top.addWidget(self._settings_btn)
-        layout.addLayout(top)
-
         summary = QFrame(self)
-        summary.setObjectName("summary")
-        summary.setStyleSheet(
-            "QFrame#summary { background: palette(base); border: 1px solid palette(mid); border-radius: 8px; }"
-        )
-        grid = QGridLayout(summary)
-        grid.setContentsMargins(14, 12, 14, 12)
+        summary.setObjectName("sectionCard")
+        summary.setStyleSheet(CARD_STYLE)
+        card = QVBoxLayout(summary)
+        card.setContentsMargins(16, 16, 16, 16)
+        card.setSpacing(10)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        self._name = QLabel(summary)
+        self._name.setFont(_title_font())
+        title_row.addWidget(self._name, 0, Qt.AlignVCenter)
+        self._badge = QLabel(summary)
+        self._badge.setFixedSize(18, 18)
+        title_row.addWidget(self._badge, 0, Qt.AlignVCenter)
+        title_row.addStretch(1)
+        card.addLayout(title_row)
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(18)
         grid.setVerticalSpacing(8)
 
@@ -122,20 +167,22 @@ class DetailPage(QWidget):
         add_field(1, 2, "目前 IP")
         add_field(2, 0, "安裝路徑", span=3)
 
-        layout.addWidget(summary)
+        card.addLayout(grid)
+        card.addWidget(_section_divider(summary))
 
         actions = QHBoxLayout()
-        actions.setSpacing(6)
-        self._power_btn = QPushButton("啟動", self)
-        self._terminal_btn = QPushButton("終端", self)
-        self._linux_btn = QPushButton("Linux 檔案", self)
-        self._install_btn = QPushButton("安裝目錄", self)
-        self._default_btn = QPushButton("設為預設", self)
-        self._backup_btn = QPushButton("備份", self)
-        self._restore_btn = QPushButton("還原", self)
-        self._snapshot_btn = QPushButton("快照", self)
-        self._clone_btn = QPushButton("複製", self)
-        self._delete_btn = QPushButton("刪除", self)
+        actions.setSpacing(8)
+        self._power_btn = self._make_action("啟動", power_start_icon(), summary)
+        self._terminal_btn = self._make_action("終端", terminal_icon(), summary)
+        self._linux_btn = self._make_action("Linux 檔案", linux_archive_icon(), summary)
+        self._install_btn = self._make_action("安裝目錄", install_dir_icon(), summary)
+        self._default_btn = self._make_action("設為預設", heart_outline_icon(), summary)
+        self._backup_btn = self._make_action("備份", backup_icon(), summary)
+        self._restore_btn = self._make_action("還原", restore_icon(), summary)
+        self._snapshot_btn = self._make_action("快照", snapshot_icon(), summary)
+        self._clone_btn = self._make_action("複製", copy_icon(), summary)
+        self._settings_btn = self._make_action("設定", settings_themed_icon(), summary)
+        self._delete_btn = self._make_action("刪除", delete_icon(), summary)
 
         self._action_buttons = (
             self._power_btn,
@@ -147,13 +194,27 @@ class DetailPage(QWidget):
             self._restore_btn,
             self._snapshot_btn,
             self._clone_btn,
+            self._settings_btn,
             self._delete_btn,
         )
-        for button in self._action_buttons:
-            button.setFixedHeight(32)
-            actions.addWidget(button)
+        for index, group in enumerate(
+            (
+                (self._power_btn, self._terminal_btn),
+                (self._linux_btn, self._install_btn),
+                (self._default_btn,),
+                (self._backup_btn, self._restore_btn, self._snapshot_btn, self._clone_btn),
+            )
+        ):
+            for button in group:
+                actions.addWidget(button)
+            if index < 3:
+                actions.addWidget(_ops_divider(summary), 0, Qt.AlignVCenter)
         actions.addStretch(1)
-        layout.addLayout(actions)
+        actions.addWidget(self._settings_btn)
+        actions.addWidget(self._delete_btn)
+        card.addLayout(actions)
+
+        layout.addWidget(summary)
 
         self._power_btn.clicked.connect(self._on_power)
         self._terminal_btn.clicked.connect(
@@ -178,6 +239,9 @@ class DetailPage(QWidget):
         self._clone_btn.clicked.connect(
             lambda: self._emit_name(self.clone_requested)
         )
+        self._settings_btn.clicked.connect(
+            lambda: self._emit_name(self.settings_requested)
+        )
         self._delete_btn.clicked.connect(
             lambda: self._emit_name(self.delete_requested)
         )
@@ -192,13 +256,29 @@ class DetailPage(QWidget):
 
         layout.addStretch(1)
 
+    def _make_action(self, text: str, icon, parent: QWidget) -> QPushButton:
+        button = QPushButton(text, parent)
+        button.setIcon(_spaced_icon(icon))
+        button.setIconSize(QSize(ICON_SIZE + 4, ICON_SIZE))
+        button.setFixedHeight(BUTTON_HEIGHT)
+        return button
+
     def set_distro(self, distro: Distro, is_system: bool) -> None:
         previous = self._distro
         self._distro = distro
         self._system = is_system
 
-        self._title.setText(distro.name)
-        self._system_badge.setVisible(is_system)
+        self._name.setText(distro.name)
+        if is_system:
+            self._badge.setPixmap(forbidden_icon().pixmap(QSize(18, 18)))
+            self._badge.setToolTip(SYSTEM_REASON)
+        elif distro.is_default:
+            self._badge.setPixmap(heart_icon().pixmap(QSize(18, 18)))
+            self._badge.setToolTip("預設 instance")
+        else:
+            self._badge.setPixmap(heart_outline_icon().pixmap(QSize(18, 18)))
+            self._badge.setToolTip("普通 instance")
+
         self._values["狀態"].setText("執行中" if distro.running else "已停止")
         self._values["WSL 版本"].setText(str(distro.version))
         self._values["磁盤大小"].setText(f"{distro.size_gb:.2f} GB")
@@ -212,6 +292,9 @@ class DetailPage(QWidget):
             self._values["目前 IP"].setText("讀取中…" if distro.running else "未執行")
 
         self._power_btn.setText("終止" if distro.running else "啟動")
+        self._power_btn.setIcon(
+            _spaced_icon(power_stop_icon() if distro.running else power_start_icon())
+        )
         self._default_btn.setEnabled(not is_system and not distro.is_default)
         self._install_btn.setEnabled(not is_system and bool(distro.base_path))
 
@@ -224,18 +307,12 @@ class DetailPage(QWidget):
             button.setEnabled(enabled)
         if is_system:
             self._default_btn.setEnabled(False)
-        self._settings_btn.setEnabled(not is_system)
-        self._settings_btn.setToolTip(
-            "系統 instance 由上層工具（如 Docker Desktop）管理，不提供設定"
-            if is_system
-            else "Instance 設定"
-        )
-        refresh_cursor(self._settings_btn)
         for button in (
             self._backup_btn,
             self._restore_btn,
             self._snapshot_btn,
             self._clone_btn,
+            self._settings_btn,
             self._delete_btn,
         ):
             button.setEnabled(enabled)
@@ -263,7 +340,3 @@ class DetailPage(QWidget):
     def _on_install_dir(self) -> None:
         if self._distro is not None and not self._system:
             self.install_dir_requested.emit(self._distro.base_path)
-
-    def _on_settings(self) -> None:
-        if self._distro is not None and not self._system:
-            self.settings_requested.emit(self._distro.name)
