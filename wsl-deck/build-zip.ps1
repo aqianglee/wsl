@@ -50,7 +50,30 @@ if (-not $IncludeConfig) {
     }
 }
 
-Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal -Force
+# 壓縮改用 tar.exe（Windows 10+ 自帶 bsdtar），比 PowerShell Compress-Archive
+# 對檔案鎖更魯棒、速度更快。保留 stage 目錄是因為要排除 logs / config.json。
+
+if (Test-Path $stageRoot) {
+    Remove-Item $stageRoot -Recurse -Force
+}
+New-Item $stage -ItemType Directory -Force | Out-Null
+Copy-Item (Join-Path $dist "*") $stage -Recurse -Force
+
+$logs = Join-Path $stage "logs"
+if (Test-Path $logs) {
+    Remove-Item $logs -Recurse -Force
+}
+if (-not $IncludeConfig) {
+    $config = Join-Path $stage "config.json"
+    if (Test-Path $config) {
+        Remove-Item $config -Force
+    }
+}
+
+& tar.exe -a -c -f $zip -C $stageRoot "WSL Deck"
+if ($LASTEXITCODE -ne 0) {
+    throw "壓縮失敗：tar.exe 結束碼 $LASTEXITCODE"
+}
 Remove-Item $stageRoot -Recurse -Force
 
 $size = (Get-Item $zip).Length / 1MB
