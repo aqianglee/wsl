@@ -96,6 +96,18 @@ def normalize_service(raw: str) -> str:
     return name if "." in name else f"{name}.service"
 
 
+def mask_command(services: Iterable[str], *, enable: bool) -> str:
+    """產生 mask／unmask 指令。
+
+    臨時模式用 `--runtime`：只寫 /run，重開機自動失效，符合 temporary 語意。
+    """
+    units = " ".join(shlex.quote(normalize_service(item)) for item in services)
+    if not units:
+        return ""
+    action = "mask" if enable else "unmask"
+    return f"systemctl {action} --runtime {units} 2>/dev/null || true"
+
+
 def transient_unit(distro: str, unit: str) -> str:
     base = unit.rsplit(".", 1)[0]
     base = re.sub(r"[^A-Za-z0-9_.@-]", "-", base)
@@ -349,6 +361,32 @@ def _stop_units(name: str, services: Iterable[str]) -> None:
         logger.warning("停止 %s 的服務失敗", name)
 
 
+def _set_runtime_mask(name: str, services: Iterable[str], *, enable: bool) -> bool:
+    command = mask_command(services, enable=enable)
+    if not command:
+        return True
+    try:
+        _root(name, command, timeout=60)
+    except WslError:
+        action = "mask" if enable else "unmask"
+        logger.warning("%s %s 失敗", action, name)
+        return False
+    return True
+
+
+def _conflict_warnings(name: str, services: Iterable[str]) -> list[str]:
+    """原 unit 若仍在共用網路啟動，會與 netns 內的副本搶同一份資料（例如 ibdata1）。"""
+    warnings: list[str] = []
+    for item in services:
+        unit = normalize_service(item)
+        state = _show_property(name, unit, "ActiveState")
+        if state in ("active", "activating"):
+            warnings.append(
+                f"{unit} 仍在共用網路啟動（{state}），可能與 netns 內的服務搶用同一份資料"
+            )
+    return warnings
+
+
 def _start_units(name: str, services: Iterable[str]) -> None:
     for item in services:
         unit = normalize_service(item)
@@ -397,7 +435,9 @@ def _restore_shared_network(name: str) -> None:
     services = [service_from_transient(name, unit) for unit in units]
     _stop_transient_units(name, units)
     _remove_namespace(name, "")
-    _start_units(name, [service for service in services if service])
+    wanted = [service for service in services if service]
+    _set_runtime_mask(name, wanted, enable=False)
+    _start_units(name, wanted)
 
 
 def _stop_transient_units(name: str, units: Iterable[str]) -> None:
@@ -452,7 +492,11 @@ def apply_temporary(name: str, cfg: NetworkConfig) -> list[str]:
     warnings: list[str] = []
     _stop_transient(name, cfg.services)
     _stop_transient_units(name, _transient_units(name))
+    _set_runtime_mask(name, cfg.services, enable=False)
     _stop_units(name, cfg.services)
+    # 原 unit 若還能在共用網路被啟動，會和 netns 內的副本搶同一份資料（例如 ibdata1）。
+    if not _set_runtime_mask(name, cfg.services, enable=True):
+        warnings.append("無法阻止原 unit 在共用網路啟動，服務可能被重複拉起")
     _remove_namespace(name, cfg.ip)
     try:
         _root(name, build_up_script(name, cfg.ip, idempotent=False), timeout=180)
@@ -493,6 +537,7 @@ def apply_temporary(name: str, cfg: NetworkConfig) -> list[str]:
         ).strip()
         if state and state != "active":
             warnings.append(f"{unit} 在 netns 內的狀態為 {state}")
+    warnings.extend(_conflict_warnings(name, cfg.services))
     return warnings
 
 
@@ -507,6 +552,7 @@ def cleanup_temporary(
     except WslError as exc:
         warnings.append(f"清理 netns 失敗：{exc}")
     if restart:
+        _set_runtime_mask(name, services, enable=False)
         _start_units(name, services)
     return warnings
 
@@ -524,7 +570,8 @@ def _install_permanent(name: str, cfg: NetworkConfig) -> list[str]:
     except WslError:
         pass
     _stop_units(name, cfg.services)
-
+    # 先前的臨時模式可能留下 runtime mask，永久模式要靠 drop-in 把原 unit 搬進 netns。
+    _set_runtime_mask(name, cfg.services, enable=False)
     _write_file(name, UP_SCRIPT, build_up_script(name, cfg.ip, idempotent=True), executable=True)
     _write_file(name, DOWN_SCRIPT, build_down_script(name, cfg.ip), executable=True)
     _write_file(name, UNIT_FILE, build_unit(cfg.services))

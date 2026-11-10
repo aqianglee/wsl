@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from app import netns
 
@@ -51,6 +52,35 @@ class UnitTest(unittest.TestCase):
         text = netns.build_dropin("wsl-mysql")
         self.assertIn("NetworkNamespacePath=/run/netns/wsl-deck-", text)
         self.assertIn("After=wsl-deck-netns.service", text)
+
+
+class RuntimeMaskTest(unittest.TestCase):
+    def test_mask_uses_runtime_scope(self) -> None:
+        self.assertEqual(
+            netns.mask_command(["mysql"], enable=True),
+            "systemctl mask --runtime mysql.service 2>/dev/null || true",
+        )
+
+    def test_unmask_uses_runtime_scope(self) -> None:
+        self.assertEqual(
+            netns.mask_command(["mysql", "tomcat.service"], enable=False),
+            "systemctl unmask --runtime mysql.service tomcat.service 2>/dev/null || true",
+        )
+
+    def test_empty_services_yield_empty_command(self) -> None:
+        self.assertEqual(netns.mask_command([], enable=True), "")
+
+
+class ConflictWarningTest(unittest.TestCase):
+    def test_warns_when_unit_still_active(self) -> None:
+        with patch("app.netns._show_property", return_value="activating"):
+            warnings = netns._conflict_warnings("wsl-mysql", ["mysql"])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("mysql.service", warnings[0])
+
+    def test_silent_when_unit_inactive(self) -> None:
+        with patch("app.netns._show_property", return_value="inactive"):
+            self.assertEqual(netns._conflict_warnings("wsl-mysql", ["mysql"]), [])
 
 
 class ParseExecStartTest(unittest.TestCase):
