@@ -54,7 +54,7 @@ from app.netns import (
 )
 from app.network import apply_rules, rule_status, scan_tcp_ports, show_portproxy
 from app.proxy import apply_runtime, parse_config
-from app.shell import open_path, open_terminal
+from app.shell import open_path, open_terminal, terminal_user
 from app.ui.app_icon import app_icon
 from app.ui.backup_dialogs import BackupDialog, CloneDialog, DeleteDialog, RestoreDialog
 from app.ui.card_wall import CardWall
@@ -1576,8 +1576,14 @@ class MainWindow(QMainWindow):
     def _open_terminal(self, name: str) -> None:
         if self._is_system(name):
             return
+        self._run_task(
+            partial(terminal_user, name),
+            partial(self._launch_terminal, name),
+        )
+
+    def _launch_terminal(self, name: str, user: str) -> None:
         try:
-            open_terminal(name)
+            open_terminal(name, user)
         except Exception as exc:  # noqa: BLE001 - 顯示給使用者
             self._show_error(f"開啟終端失敗：{exc}")
 
