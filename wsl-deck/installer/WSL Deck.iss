@@ -2,7 +2,7 @@
 ; 默认为当前用户安装，安装 App 不需要管理员权限。
 
 #define MyAppName "WSL Deck"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppExeName "WSL Deck.exe"
 
 [Setup]

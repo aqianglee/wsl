@@ -12,7 +12,7 @@ if (-not $iscc) {
 
 & $iscc (Join-Path $root "installer\WSL Deck.iss")
 
-$setup = Join-Path $root "dist\WSL-Deck-Setup-1.0.0.exe"
+$setup = Join-Path $root "dist\WSL-Deck-Setup-1.0.1.exe"
 if (-not (Test-Path $setup)) {
     throw "建置失败：找不到 $setup"
 }
